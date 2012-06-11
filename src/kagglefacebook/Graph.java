@@ -8,7 +8,6 @@ import java.io.File;
 import java.io.IOException;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.index.Index;
@@ -26,7 +25,6 @@ public class Graph {
     String greeting;
     private GraphDatabaseService graphDb;
     private Index<Node> nameIndex;
-    private Index<Node> codeIndex;
     private String NAME_KEY = "name";
     private String DIR;
     private boolean newDB;
@@ -51,8 +49,9 @@ public class Graph {
         String [] lines = Helper.readFile(DIR+file).split(System.getProperty("line.separator"));
         System.out.println("Loading "+DIR+file);
         for (int i=1; i<lines.length;i++){
-            String [] names = lines[i].split(",");
-            createRelationship(names[0],names[1]);
+            String [] names = lines[i].split(",");            
+            //createRelationship(names[0],names[1]);
+            new Thread(new CreateRelationship(names[0],names[1])).start();
         }
         
     }
@@ -63,8 +62,7 @@ public class Graph {
    }
     
     
-   private void clearDb()
-    {
+   private void clearDb(){
         try
         {
             FileUtils.deleteRecursively( new File( DB_PATH ) );
@@ -76,8 +74,7 @@ public class Graph {
     }
     
    
-   void shutDown()
-    {
+   void shutDown(){
         System.out.println();
         System.out.println( "Shutting down database ..." );
         // START SNIPPET: shutdownServer
@@ -86,8 +83,7 @@ public class Graph {
     }
     
    // START SNIPPET: shutdownHook
-   private static void registerShutdownHook( final GraphDatabaseService graphDb )
-    {
+   private static void registerShutdownHook( final GraphDatabaseService graphDb ){
         // Registers a shutdown hook for the Neo4j instance so that it
         // shuts down nicely when the VM exits (even if you "Ctrl-C" the
         // running example before it's completed)
@@ -101,36 +97,53 @@ public class Graph {
         } );
     }
     // END SNIPPET: shutdownHook
-    
-    public void createRelationship(String from, String to){
-         Node fromNode = null;
-         Node toNode = null;
-         if (from==null || to==null){
-            return;
-         }
-         Transaction tx = graphDb.beginTx();
-         try{
-            fromNode = getOrCreateAndIndexNode(from);
-            toNode = getOrCreateAndIndexNode(to);
-            fromNode.createRelationshipTo(toNode, facebookRelationshipTypes.relation);
-            tx.success();
-         } catch (Exception ex){
-             //System.out.println("Problem with graph relationship:"+ex);
-             ex.getMessage();
-         }
-           finally {
-             tx.finish();
-         }              
-    }
-    
+          
      private Node getOrCreateAndIndexNode(String name){
         Node node = nameIndex.get(NAME_KEY, name).getSingle();
-        if (node == null){        
-            node = graphDb.createNode();
-            node.setProperty(NAME_KEY, name);        
-            nameIndex.add(node, NAME_KEY, name);
+        if (node == null){
+            Transaction tx = graphDb.beginTx();
+            try{
+                node = graphDb.createNode();
+                node.setProperty(NAME_KEY, name);        
+                nameIndex.add(node, NAME_KEY, name);
+                tx.success();
+            }
+            finally {
+                tx.finish();
+            }
         }
         return node;        
-    }    
+    }  
+   
      
+    public class CreateRelationship implements Runnable{
+        private String fromName;
+        private String toName;
+        
+        
+        public CreateRelationship(String from, String to){
+            this.fromName = from;
+            this.toName = to;
+        }
+        
+        @Override
+        public void run() {
+            Node fromNode = getOrCreateAndIndexNode(fromName);
+            Node toNode = getOrCreateAndIndexNode(toName);
+            Transaction tx = graphDb.beginTx();
+            try{                        
+                fromNode.createRelationshipTo(toNode, facebookRelationshipTypes.relation);
+                tx.success();
+                //System.out.println(fromNode.getProperty(NAME_KEY) +":"+toNode.getProperty(NAME_KEY));
+            } catch (Exception ex){
+                 //System.out.println("Problem with graph relationship:"+ex);
+                ex.getMessage();
+            }
+            finally {
+                tx.finish();
+            }     
+        }
+        
+    }
+    
 }
