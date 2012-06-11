@@ -6,11 +6,13 @@ package kagglefacebook;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.index.Index;
+import org.neo4j.graphdb.index.IndexHits;
 import org.neo4j.kernel.EmbeddedGraphDatabase;
 import org.neo4j.kernel.impl.util.FileUtils;
 
@@ -48,10 +50,27 @@ public class Graph {
     public void loadFromCSV(String file){
         String [] lines = Helper.readFile(DIR+file).split(System.getProperty("line.separator"));
         System.out.println("Loading "+DIR+file);
-        for (int i=1; i<lines.length;i++){
+        ThreadGroup threads = new ThreadGroup("createRelationship");
+        
+        ArrayList <Thread> threadList = new ArrayList<Thread>();
+        for (int i=1; i<lines.length; i++){
             String [] names = lines[i].split(",");            
-            //createRelationship(names[0],names[1]);
-            new Thread(new CreateRelationship(names[0],names[1])).start();
+            //new Thread(threads,new CreateRelationship(names[0],names[1])).start();
+            Runtime runtime = Runtime.getRuntime();
+            while(runtime.totalMemory() > runtime.maxMemory()/2 ||runtime.freeMemory() < 1000000000 || runtime.availableProcessors()<2/*|| threads.activeCount()>1000*/){
+                for(int j=0; j<threadList.size(); j++){
+                    try {
+                        threadList.get(j).join();
+                        threadList.remove(j);
+                        j--;
+                    } catch (InterruptedException ex) {
+                        System.out.println(ex);
+                    }
+                }
+                System.gc();
+            }
+            threadList.add(new Thread(threads,new CreateRelationship(names[0],names[1])));
+            threadList.get(threadList.size()-1).start();
         }
         
     }
@@ -98,7 +117,7 @@ public class Graph {
     }
     // END SNIPPET: shutdownHook
           
-     private Node getOrCreateAndIndexNode(String name){
+    /* private Node getOrCreateAndIndexNode(String name){
         Node node = nameIndex.get(NAME_KEY, name).getSingle();
         if (node == null){
             Transaction tx = graphDb.beginTx();
@@ -113,7 +132,7 @@ public class Graph {
             }
         }
         return node;        
-    }  
+    } */ 
    
      
     public class CreateRelationship implements Runnable{
@@ -143,6 +162,32 @@ public class Graph {
                 tx.finish();
             }     
         }
+        
+        private Node getOrCreateAndIndexNode(String name){
+            Node node = null;
+            try{
+                IndexHits<Node> hits = nameIndex.get(NAME_KEY, name);
+                if(hits.hasNext()){
+                    node = hits.next();
+                }
+                hits.close();
+            } catch (Exception e){
+                System.out.println(e+":"+name);
+            }
+            if (node == null){
+                Transaction tx = graphDb.beginTx();
+                try{
+                    node = graphDb.createNode();
+                    node.setProperty(NAME_KEY, name);        
+                    nameIndex.add(node, NAME_KEY, name);
+                    tx.success();
+                }
+                finally {
+                    tx.finish();
+                }
+            }
+            return node;        
+        }  
         
     }
     
