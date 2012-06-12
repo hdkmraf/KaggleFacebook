@@ -16,15 +16,16 @@ public class KaggleFacebook {
     public static void main(String[] args) {
         String dir = "/home/rafael/kaggle_facebook_dump/";                     
         // newGraph = true will overwrite the neo4j graph and googlechart.js
-        boolean newGraph = true;
+        boolean newGraph = false;
         
         Graph graph = new Graph(dir, dir+"graph.db", newGraph);
         
-        //Helper.convertToBatchCSV(dir,"train.csv");
         
         if(newGraph)
           //  graph.loadFromCSV("train.csv");
             graph.batchInsertFromCSV("train.csv");
+        
+        graph.makePredictions("test.csv");
         
         //Shut down...
         graph.shutDown();

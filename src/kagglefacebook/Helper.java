@@ -11,7 +11,6 @@ import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.lang.StringBuilder;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -132,6 +131,5 @@ public class Helper {
         for (String node: nodes){
             Helper.writeToFile(nodesCSV+NL, node, false);
         }                
-    }
-    
+    }        
 }
