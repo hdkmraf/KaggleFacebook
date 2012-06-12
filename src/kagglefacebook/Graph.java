@@ -7,7 +7,9 @@ package kagglefacebook;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.neo4j.graphdb.GraphDatabaseService;
@@ -18,6 +20,8 @@ import org.neo4j.graphdb.index.Index;
 import org.neo4j.graphdb.index.IndexHits;
 import org.neo4j.kernel.EmbeddedGraphDatabase;
 import org.neo4j.kernel.impl.util.FileUtils;
+import org.neo4j.unsafe.batchinsert.BatchInserter;
+import org.neo4j.unsafe.batchinsert.BatchInserters;
 
 
 /**
@@ -42,7 +46,11 @@ public class Graph {
         newDB = newdb;
         if(newDB){
             clearDb();
-        }
+        }       
+        startDB();
+    }
+    
+    private void startDB(){
         // START SNIPPET: startDb
         //graphDb = new GraphDatabaseFactory().newEmbeddedDatabase( DB_PATH );
         graphDb = new EmbeddedGraphDatabase( DB_PATH );
@@ -77,6 +85,38 @@ public class Graph {
         System.out.println("Finished loading "+DIR+file);
     }
     
+   
+   public void batchInsertFromCSV(String file){
+       graphDb.shutdown();
+       
+       String[] lines = Helper.readFile(DIR+file).split(System.getProperty("line.separator"));
+       System.out.println("batchInserterFromCSV "+DIR+file);
+       
+       Map<String, String> config = new HashMap<String, String>();
+       config.put("use_memory_mapped_buffers","false");
+       config.put("neostore.propertystore.db.index.keys.mapped_memory","5M");
+       config.put("neostore.propertystore.db.strings.mapped_memory","100M");
+       config.put("neostore.propertystore.db.arrays.mapped_memory","107M");
+       config.put("neostore.relationshipstore.db.mapped_memory","1000M");
+       config.put("neostore.propertystore.db.index.mapped_memory","5M");
+       config.put("neostore.propertystore.db.mapped_memory","1000M");
+       config.put("dump_configuration","true");
+       config.put("cache_type","none");
+       config.put("neostore.nodestore.db.mapped_memory","200M");
+       BatchInserter inserter = BatchInserters.inserter(DB_PATH, config);       
+       
+       for (String line:lines){
+           Map<String,Object> properties = new HashMap<String, Object>();
+           String[] names = line.split(",");
+           properties.put(NAME_KEY, names[0]);
+           long node1 = inserter.createNode(properties);
+           properties.put(NAME_KEY, names[1]);
+           long node2 = inserter.createNode(properties);
+           inserter.createRelationship(node1, node2, facebookRelationshipTypes.relation, null);       
+       }
+       inserter.shutdown();      
+       startDB();
+   }
     
    private enum facebookRelationshipTypes implements RelationshipType{
        relation

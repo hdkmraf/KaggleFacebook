@@ -19,6 +19,7 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.Scanner;
 import java.util.logging.Level;
@@ -105,6 +106,32 @@ public class Helper {
             Logger.getLogger(Helper.class.getName()).log(Level.SEVERE, null, ex);
         }
         return response;
+    }
+    
+     public static void convertToBatchCSV(String DIR, String file){
+        String NL = System.getProperty("line.separator");
+        String[] lines = Helper.readFile(DIR+file).split(NL);
+        String  nodesCSV = DIR+"nodes.csv";
+        String relsCSV = DIR+"rels.csv";
+        System.out.println("Loading "+DIR+file);
+        ArrayList<String> nodes = new ArrayList<String>();
+     
+        Helper.writeToFile(relsCSV, "Start\tEnde\tType"+NL, false);
+        for(String line: lines){
+             String[] names = line.split(",");
+             Helper.writeToFile(relsCSV, names[0]+"\t"+names[1]+"\tONE"+NL, false);
+             if(!nodes.contains(names[0])){
+                 nodes.add(names[0]);
+             }
+             if(!nodes.contains(names[1])){
+                 nodes.add(names[1]);
+             }
+        }
+        
+        Helper.writeToFile(nodesCSV, "Node"+NL, false);
+        for (String node: nodes){
+            Helper.writeToFile(nodesCSV+NL, node, false);
+        }                
     }
     
 }

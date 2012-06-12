@@ -19,9 +19,12 @@ public class KaggleFacebook {
         boolean newGraph = true;
         
         Graph graph = new Graph(dir, dir+"graph.db", newGraph);
-  
+        
+        //Helper.convertToBatchCSV(dir,"train.csv");
+        
         if(newGraph)
-            graph.loadFromCSV("train.csv");
+          //  graph.loadFromCSV("train.csv");
+            graph.batchInsertFromCSV("train.csv");
         
         //Shut down...
         graph.shutDown();
