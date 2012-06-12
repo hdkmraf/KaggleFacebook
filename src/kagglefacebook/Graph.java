@@ -7,6 +7,9 @@ package kagglefacebook;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.RelationshipType;
@@ -30,6 +33,7 @@ public class Graph {
     private String NAME_KEY = "name";
     private String DIR;
     private boolean newDB;
+    private int MAX_THREADS = 50;
     
     
     public Graph(String dir, String db_path, boolean newdb){
@@ -48,38 +52,36 @@ public class Graph {
     }
     
     public void loadFromCSV(String file){
-        String [] lines = Helper.readFile(DIR+file).split(System.getProperty("line.separator"));
+        String[] lines = Helper.readFile(DIR+file).split(System.getProperty("line.separator"));
         System.out.println("Loading "+DIR+file);
-        ThreadGroup threads = new ThreadGroup("createRelationship");
+        int batchSize = (lines.length-1)/MAX_THREADS;
+        List<Thread> threads = new ArrayList<Thread>();
         
-        ArrayList <Thread> threadList = new ArrayList<Thread>();
-        for (int i=1; i<lines.length; i++){
-            String [] names = lines[i].split(",");            
-            //new Thread(threads,new CreateRelationship(names[0],names[1])).start();
-            Runtime runtime = Runtime.getRuntime();
-            while(runtime.totalMemory() > runtime.maxMemory()/2 ||runtime.freeMemory() < 1000000000 || runtime.availableProcessors()<2/*|| threads.activeCount()>1000*/){
-                for(int j=0; j<threadList.size(); j++){
-                    try {
-                        threadList.get(j).join();
-                        threadList.remove(j);
-                        j--;
-                    } catch (InterruptedException ex) {
-                        System.out.println(ex);
-                    }
-                }
-                System.gc();
-            }
-            threadList.add(new Thread(threads,new CreateRelationship(names[0],names[1])));
-            threadList.get(threadList.size()-1).start();
+        for(int i=1; i<lines.length;){
+            List<String> batch = new ArrayList<String>();
+            for(int j=0; j<batchSize && i<lines.length; j++){
+                batch.add(lines[i]);
+                i++;
+            }            
+            threads.add(new Thread(new LoadBatch(batch)));            
+            threads.get(threads.size()-1).start();
         }
         
+        for (Thread thread: threads){
+            try {
+                thread.join();
+            } catch (InterruptedException ex) {
+                Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        System.out.println("Finished loading "+DIR+file);
     }
     
     
    private enum facebookRelationshipTypes implements RelationshipType{
        relation
    }
-    
+     
     
    private void clearDb(){
         try
@@ -117,37 +119,32 @@ public class Graph {
     }
     // END SNIPPET: shutdownHook
           
-    /* private Node getOrCreateAndIndexNode(String name){
-        Node node = nameIndex.get(NAME_KEY, name).getSingle();
-        if (node == null){
-            Transaction tx = graphDb.beginTx();
-            try{
-                node = graphDb.createNode();
-                node.setProperty(NAME_KEY, name);        
-                nameIndex.add(node, NAME_KEY, name);
-                tx.success();
-            }
-            finally {
-                tx.finish();
-            }
+    
+    public class LoadBatch implements Runnable{
+        
+        private List<String> lines;
+        
+        public LoadBatch (List<String> lines){
+            this.lines = lines;
         }
-        return node;        
-    } */ 
-   
-     
-    public class CreateRelationship implements Runnable{
-        private String fromName;
-        private String toName;
-        
-        
-        public CreateRelationship(String from, String to){
-            this.fromName = from;
-            this.toName = to;
-        }
-        
+
         @Override
         public void run() {
-            Node fromNode = getOrCreateAndIndexNode(fromName);
+            String sourceName = "";
+            Node sourceNode = null;        
+            for (String line : lines){           
+                String [] names = line.split(",");
+                if(!names[0].equals(sourceName)){
+                    sourceName = names[0];
+                    sourceNode = getOrCreateAndIndexNode(sourceName);
+                }
+                createRelationship(sourceName, names[1], sourceNode);
+            }
+        }
+        
+         public void createRelationship(String fromName, String toName, Node fromNode) {
+            if (fromNode == null)
+                fromNode = getOrCreateAndIndexNode(fromName);
             Node toNode = getOrCreateAndIndexNode(toName);
             Transaction tx = graphDb.beginTx();
             try{                        
@@ -160,7 +157,7 @@ public class Graph {
             }
             finally {
                 tx.finish();
-            }     
+            }
         }
         
         private Node getOrCreateAndIndexNode(String name){
