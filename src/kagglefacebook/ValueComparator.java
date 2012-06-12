@@ -22,8 +22,12 @@ public class ValueComparator implements Comparator{
         public int compare(Object a, Object b) {
             Float fa = (Float) base.get(a);
             Float fb = (Float) base.get(b);
-            int result = fa.compareTo(fb);
-            return result;
+            if (fa<fb)
+                return 1;
+            else if(fa==fb)
+                return 0;
+            else
+                return -1;
         }
        
    }

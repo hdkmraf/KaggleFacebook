@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -51,6 +52,7 @@ public class Graph {
             .relationships(facebookRelationshipTypes.relation)
             .uniqueness(Uniqueness.NODE_GLOBAL);
     private String NL = System.getProperty("line.separator");
+    private Random random = new Random();
    
     
     
@@ -195,7 +197,8 @@ public class Graph {
            for(Long n:bestNodes.keySet()){
                nodesString = nodesString + n + " ";
            }
-           nodesString = nodesString.substring(0, nodesString.length()-1);
+           if(nodesString.length()>0)
+               nodesString = nodesString.substring(0, nodesString.length()-1);
            Helper.writeToFile(resultFile, nodeId+","+nodesString+NL, false);
            System.out.println(nodeId+","+nodesString);
        }
@@ -205,28 +208,38 @@ public class Graph {
        Map<Long,Float> predictedNodes = new HashMap<Long,Float>();
        ValueComparator bvc = new ValueComparator(predictedNodes);
        TreeMap<Long,Float> sortedMap = new TreeMap(bvc);
-       
+       int iterationsWithoutImprovement = 0;
+       Float prevAvgWeight = 0F;
        for(Path position: PREDICTION_TRAVERSAL.traverse(origin)){
            if(position.length()<2)
                continue;
            Float weight = getRelationshipWeight(origin,position.endNode(), position.length());
+        
            if (weight>0)
                predictedNodes.put(position.endNode().getId(), weight);
            if (predictedNodes.size()>10){
                sortedMap.clear();
                sortedMap.putAll(predictedNodes);
-               //predictedNodes.clear();
+               predictedNodes.clear();
                int i=0;
+               Float newAvgWeight = 0F;
                for(Map.Entry<Long, Float> entry: sortedMap.entrySet()){
-                   System.out.print(entry.getValue()+" ");
+                   //System.out.print(entry.getValue()+" ");
                    predictedNodes.put(entry.getKey(), entry.getValue());
+                   newAvgWeight+=entry.getValue();
                    i++;
                    if(i>=10)
                        break;
+               }               
+               //System.out.println();
+               newAvgWeight /=10F;
+               if(newAvgWeight <= prevAvgWeight){
+                   iterationsWithoutImprovement++;
                }
-               System.out.println();
+               prevAvgWeight = newAvgWeight;               
            }
-               
+           if (iterationsWithoutImprovement>100)
+               break;               
        }
        return predictedNodes;
    }
@@ -236,16 +249,23 @@ public class Graph {
        PathFinder<Path> finder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(),maxDepth);       
        Iterable<Path> paths = finder.findAllPaths(from, to);                   
        Float weight = 0F;
-       Integer count = 0;
+       Float pathCount = 0F;
+       Float avgPathLength = 0F;
        for(Path path:paths){
-           if(path.length()>0){
-               weight += 1F/Float.valueOf(path.length());
-               count++;
+           Float pathLength = Float.valueOf(path.length());
+           if(pathLength>0){
+               weight += 1F/pathLength;
+               avgPathLength += pathLength;
+               pathCount++;
            } 
            else
                return 0F;
-       }       
-       return weight/count;
+       }
+       avgPathLength /= pathCount;
+       //weight /= pathCount;
+       Float rand = random.nextFloat()*0.000000001F;
+       //System.out.println(weight+":"+avgPathLength+":"+pathCount);
+       return weight+rand;
    }
    
    
