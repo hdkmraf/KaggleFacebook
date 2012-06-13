@@ -53,6 +53,9 @@ public class Graph {
             .uniqueness(Uniqueness.NODE_GLOBAL);
     private String NL = System.getProperty("line.separator");
     private Random random = new Random();
+    private Map<String, String> config = new HashMap<String, String>();
+    long TIME_LIMIT = 10000;
+      
    
     
     
@@ -62,14 +65,24 @@ public class Graph {
         newDB = newdb;
         if(newDB){
             clearDb();
-        }       
+        }
+       config.put("use_memory_mapped_buffers","false");
+       config.put("neostore.propertystore.db.index.keys.mapped_memory","5M");
+       config.put("neostore.propertystore.db.strings.mapped_memory","100M");
+       config.put("neostore.propertystore.db.arrays.mapped_memory","107M");
+       config.put("neostore.relationshipstore.db.mapped_memory","2000M");
+       config.put("neostore.propertystore.db.index.mapped_memory","5M");
+       config.put("neostore.propertystore.db.mapped_memory","1000M");
+       config.put("dump_configuration","true");
+       config.put("cache_type","none");
+       config.put("neostore.nodestore.db.mapped_memory","500M");
         startDB();
     }
     
     private void startDB(){
         // START SNIPPET: startDb
         //graphDb = new GraphDatabaseFactory().newEmbeddedDatabase( DB_PATH );
-        graphDb = new EmbeddedGraphDatabase( DB_PATH );
+        graphDb = new EmbeddedGraphDatabase( DB_PATH , config);
         nameIndex = graphDb.index().forNodes(NAME_KEY);
         registerShutdownHook( graphDb );
         // END SNIPPET: startDb
@@ -108,17 +121,6 @@ public class Graph {
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("batchInserterFromCSV "+DIR+file);
        
-       Map<String, String> config = new HashMap<String, String>();
-       config.put("use_memory_mapped_buffers","false");
-       config.put("neostore.propertystore.db.index.keys.mapped_memory","5M");
-       config.put("neostore.propertystore.db.strings.mapped_memory","100M");
-       config.put("neostore.propertystore.db.arrays.mapped_memory","107M");
-       config.put("neostore.relationshipstore.db.mapped_memory","1000M");
-       config.put("neostore.propertystore.db.index.mapped_memory","5M");
-       config.put("neostore.propertystore.db.mapped_memory","1000M");
-       config.put("dump_configuration","true");
-       config.put("cache_type","none");
-       config.put("neostore.nodestore.db.mapped_memory","200M");
        BatchInserter inserter = BatchInserters.inserter(DB_PATH, config);       
        
        for (int i=1; i< lines.length; i++){
@@ -192,7 +194,7 @@ public class Graph {
        for(int i=1; i<lines.length; i++){
            long nodeId = Long.valueOf(lines[i]);           
            Node node = graphDb.getNodeById(nodeId);
-           Map<Long,Float> bestNodes = predictRelatedNodes(node);
+           Map<Long,Double> bestNodes = predictRelatedNodes(node);
            String nodesString = "";
            for(Long n:bestNodes.keySet()){
                nodesString = nodesString + n + " ";
@@ -204,17 +206,33 @@ public class Graph {
        }
    }
           
-   private Map<Long,Float> predictRelatedNodes(Node origin){
-       Map<Long,Float> predictedNodes = new HashMap<Long,Float>();
+   private Map<Long,Double> predictRelatedNodes(Node origin){
+       Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
        ValueComparator bvc = new ValueComparator(predictedNodes);
-       TreeMap<Long,Float> sortedMap = new TreeMap(bvc);
+       TreeMap<Long,Double> sortedMap = new TreeMap(bvc);
        int iterationsWithoutImprovement = 0;
-       Float prevAvgWeight = 0F;
-       for(Path position: PREDICTION_TRAVERSAL.traverse(origin)){
-           if(position.length()<2)
+       Double prevAvgWeight = 0.0;
+       int depth = 0;
+       int maxDepth = 2;       
+       long elapsedTime = 0;
+       long startTime = System.currentTimeMillis();
+       for(Path position: PREDICTION_TRAVERSAL.traverse(origin)){           
+           depth = position.length();
+           if(depth<2)
                continue;
-           Float weight = getRelationshipWeight(origin,position.endNode(), position.length());
-        
+           if(elapsedTime > TIME_LIMIT){
+                if(predictedNodes.size()>=10)
+                    break;
+           }
+           if (iterationsWithoutImprovement>50 || depth > maxDepth)
+               if(predictedNodes.size()<10){
+                   maxDepth++;
+                   iterationsWithoutImprovement = 0;
+               } else {
+                   break;
+               }
+
+           Double weight = getRelationshipWeight(origin,position.endNode(), depth+1);
            if (weight>0)
                predictedNodes.put(position.endNode().getId(), weight);
            if (predictedNodes.size()>10){
@@ -222,48 +240,52 @@ public class Graph {
                sortedMap.putAll(predictedNodes);
                predictedNodes.clear();
                int i=0;
-               Float newAvgWeight = 0F;
-               for(Map.Entry<Long, Float> entry: sortedMap.entrySet()){
-                   //System.out.print(entry.getValue()+" ");
+               Double newAvgWeight = 0.0;
+               for(Map.Entry<Long, Double> entry:  sortedMap.entrySet()){
                    predictedNodes.put(entry.getKey(), entry.getValue());
                    newAvgWeight+=entry.getValue();
                    i++;
                    if(i>=10)
                        break;
-               }               
-               //System.out.println();
-               newAvgWeight /=10F;
+               }                    
+               newAvgWeight /=10.0;
                if(newAvgWeight <= prevAvgWeight){
                    iterationsWithoutImprovement++;
+               } else {
+                   iterationsWithoutImprovement = 0;
                }
                prevAvgWeight = newAvgWeight;               
-           }
-           if (iterationsWithoutImprovement>100)
-               break;               
+           }           
+           elapsedTime = System.currentTimeMillis()-startTime;
+           System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
        }
        return predictedNodes;
    }
    
    
-   private Float getRelationshipWeight(Node from, Node to, int maxDepth){
+   private Double getRelationshipWeight(Node from, Node to, int maxDepth){
        PathFinder<Path> finder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(),maxDepth);       
        Iterable<Path> paths = finder.findAllPaths(from, to);                   
-       Float weight = 0F;
-       Float pathCount = 0F;
-       Float avgPathLength = 0F;
+       Double weight = 0.0;
+       Double pathCount = 0.0;
+       Double avgPathLength = 0.0;
        for(Path path:paths){
-           Float pathLength = Float.valueOf(path.length());
-           if(pathLength>0){
-               weight += 1F/pathLength;
+           Double pathLength = Double.valueOf(path.length());
+           if(pathLength>1){
+               weight += 1.0/pathLength;
                avgPathLength += pathLength;
                pathCount++;
            } 
            else
-               return 0F;
+               return 0.0;
        }
        avgPathLength /= pathCount;
        //weight /= pathCount;
-       Float rand = random.nextFloat()*0.000000001F;
+       Double rand = random.nextDouble();
+       if (rand<0.5){
+           rand *= -1.0;
+       }
+       rand *= 0.000001;
        //System.out.println(weight+":"+avgPathLength+":"+pathCount);
        return weight+rand;
    }

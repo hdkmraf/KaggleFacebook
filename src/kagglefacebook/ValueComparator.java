@@ -20,8 +20,8 @@ public class ValueComparator implements Comparator{
 
         @Override
         public int compare(Object a, Object b) {
-            Float fa = (Float) base.get(a);
-            Float fb = (Float) base.get(b);
+            Double fa = (Double) base.get(a);
+            Double fb = (Double) base.get(b);
             if (fa<fb)
                 return 1;
             else if(fa==fb)
