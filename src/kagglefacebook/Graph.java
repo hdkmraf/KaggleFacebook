@@ -405,7 +405,7 @@ public class Graph {
                 if(nodesString.length()>0)
                     nodesString = nodesString.substring(0, nodesString.length()-1);
                 Helper.writeToFile(outFile, nodeId+","+nodesString+NL, false);
-                System.out.println(nodeId+","+nodesString);
+                //System.out.println(nodeId+","+nodesString);
             }
         }
         
@@ -460,8 +460,9 @@ public class Graph {
                     prevAvgWeight = newAvgWeight;               
                 }           
                 elapsedTime = System.currentTimeMillis()-startTime;
-                System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
+                //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
             }
+            //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
             return predictedNodes;
         }
    
