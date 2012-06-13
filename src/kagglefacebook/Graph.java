@@ -45,8 +45,11 @@ public class Graph {
     private String NAME_KEY = "name";
     private String DIR;
     private boolean newDB;
-    private int MAX_THREADS = 50;
-    final TraversalDescription PREDICTION_TRAVERSAL = 
+    
+    private final int MAX_THREADS = 7;
+    private final long TIME_LIMIT = 10000;
+    
+    private final TraversalDescription PREDICTION_TRAVERSAL = 
             Traversal.description()
             .breadthFirst()
             .relationships(facebookRelationshipTypes.relation)
@@ -54,7 +57,7 @@ public class Graph {
     private String NL = System.getProperty("line.separator");
     private Random random = new Random();
     private Map<String, String> config = new HashMap<String, String>();
-    long TIME_LIMIT = 10000;
+    
       
    
     
@@ -187,25 +190,45 @@ public class Graph {
    public void makePredictions(String file){     
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("makePredictions "+DIR+file);
-       graphDb.index().getNodeAutoIndexer().startAutoIndexingProperty("id");
-       Index<Node> idIndex = graphDb.index().forNodes("id");
+       int batchSize = (lines.length-1)/MAX_THREADS;
+       List<Thread> threads = new ArrayList<Thread>(); 
+       List<String> batchFiles = new ArrayList<String>(); 
+       int batchCount=0;
+       for(int i=1; i<lines.length;){
+           List<Long> batch = new ArrayList<Long>();
+           for(int j=0; j<batchSize && i<lines.length; j++){
+               batch.add(Long.valueOf(lines[i]));
+               i++;           
+           }      
+           String batchFile = DIR+"batch_"+batchCount;
+           batchFiles.add(batchFile);
+           batchCount++;
+           threads.add(new Thread(new PredictBatch(batch, batchFile)));            
+           threads.get(threads.size()-1).start();           
+       }
+        
+       for (Thread thread: threads){
+           try {
+               thread.join();
+           } catch (InterruptedException ex) {
+               Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
+           }
+       }
+       
        String resultFile = DIR+"result.csv";
        Helper.writeToFile(resultFile, "source_node,destination_nodes"+NL, false);
-       for(int i=1; i<lines.length; i++){
-           long nodeId = Long.valueOf(lines[i]);           
-           Node node = graphDb.getNodeById(nodeId);
-           Map<Long,Double> bestNodes = predictRelatedNodes(node);
-           String nodesString = "";
-           for(Long n:bestNodes.keySet()){
-               nodesString = nodesString + n + " ";
+       for (String batchFile:batchFiles){
+           lines = Helper.readFile(batchFile).split(NL);
+           for (String line: lines){
+               Helper.writeToFile(resultFile, line+NL, false);
            }
-           if(nodesString.length()>0)
-               nodesString = nodesString.substring(0, nodesString.length()-1);
-           Helper.writeToFile(resultFile, nodeId+","+nodesString+NL, false);
-           System.out.println(nodeId+","+nodesString);
        }
+       
+       System.out.println("Finished predicting "+resultFile);             
    }
-          
+       
+       
+   /*       
    private Map<Long,Double> predictRelatedNodes(Node origin){
        Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
        ValueComparator bvc = new ValueComparator(predictedNodes);
@@ -290,7 +313,7 @@ public class Graph {
        return weight+rand;
    }
    
-   
+   */
  
    
     public class LoadBatch implements Runnable{
@@ -360,5 +383,115 @@ public class Graph {
         }  
         
     }
-    
+     
+    public class PredictBatch implements Runnable{       
+        private List<Long> nodes;
+        private String outFile;
+        
+        public PredictBatch(List<Long> nodes, String outfile){
+            this.nodes = nodes;            
+            this.outFile = outfile;
+        }
+
+        @Override
+        public void run() {
+            for(Long nodeId: nodes){
+                Node node = graphDb.getNodeById(nodeId);
+                Map<Long,Double> bestNodes = predictRelatedNodes(node);
+                String nodesString = "";
+                for(Long n:bestNodes.keySet()){
+                    nodesString = nodesString + n + " ";
+                }
+                if(nodesString.length()>0)
+                    nodesString = nodesString.substring(0, nodesString.length()-1);
+                Helper.writeToFile(outFile, nodeId+","+nodesString+NL, false);
+                System.out.println(nodeId+","+nodesString);
+            }
+        }
+        
+        private Map<Long,Double> predictRelatedNodes(Node origin){
+            Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
+            ValueComparator bvc = new ValueComparator(predictedNodes);
+            TreeMap<Long,Double> sortedMap = new TreeMap(bvc);
+            int iterationsWithoutImprovement = 0;
+            Double prevAvgWeight = 0.0;
+            int depth = 0;
+            int maxDepth = 2;       
+            long elapsedTime = 0;
+            long startTime = System.currentTimeMillis();
+            for(Path position: PREDICTION_TRAVERSAL.traverse(origin)){           
+                depth = position.length();
+                if(depth<2)
+                    continue;
+                if(elapsedTime > TIME_LIMIT){
+                    if(predictedNodes.size()>=10)
+                        break;
+                }
+                if (iterationsWithoutImprovement>50 || depth > maxDepth)
+                    if(predictedNodes.size()<10){
+                        maxDepth++;
+                        iterationsWithoutImprovement = 0;
+                    } else {
+                        break;
+                    }
+
+                Double weight = getRelationshipWeight(origin,position.endNode(), depth+1);
+                if (weight>0)
+                    predictedNodes.put(position.endNode().getId(), weight);
+                if (predictedNodes.size()>10){
+                    sortedMap.clear();
+                    sortedMap.putAll(predictedNodes);
+                    predictedNodes.clear();
+                    int i=0;
+                    Double newAvgWeight = 0.0;
+                    for(Map.Entry<Long, Double> entry:  sortedMap.entrySet()){
+                        predictedNodes.put(entry.getKey(), entry.getValue());
+                        newAvgWeight+=entry.getValue();
+                        i++;
+                        if(i>=10)
+                            break;
+                    }                    
+                    newAvgWeight /=10.0;
+                    if(newAvgWeight <= prevAvgWeight){
+                        iterationsWithoutImprovement++;
+                    } else {
+                        iterationsWithoutImprovement = 0;
+                    }
+                    prevAvgWeight = newAvgWeight;               
+                }           
+                elapsedTime = System.currentTimeMillis()-startTime;
+                System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
+            }
+            return predictedNodes;
+        }
+   
+   
+        private Double getRelationshipWeight(Node from, Node to, int maxDepth){
+            PathFinder<Path> finder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(),maxDepth);       
+            Iterable<Path> paths = finder.findAllPaths(from, to);                   
+            Double weight = 0.0;
+            Double pathCount = 0.0;
+            Double avgPathLength = 0.0;
+            for(Path path:paths){
+                Double pathLength = Double.valueOf(path.length());
+                if(pathLength>1){
+                    weight += 1.0/pathLength;
+                    avgPathLength += pathLength;
+                    pathCount++;
+                } 
+                else
+                    return 0.0;
+            }
+            avgPathLength /= pathCount;
+            //weight /= pathCount;
+            Double rand = random.nextDouble();
+            if (rand<0.5){
+                rand *= -1.0;
+            }
+            rand *= 0.000001;
+            //System.out.println(weight+":"+avgPathLength+":"+pathCount);
+            return weight+rand;
+        }
+        
+    }
 }
