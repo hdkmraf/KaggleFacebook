@@ -310,10 +310,10 @@ public class Graph {
         public void run() {
             for(Long nodeId: nodes){
                 Node node = graphDb.getNodeById(nodeId);
-                Map<Long,Double> bestNodes = new HashMap<Long,Double>();
-                bestNodes = predictRelatedNodes(node, bestNodes,  Direction.OUTGOING);
+                int totalNodes = 10;
+                Map<Long,Double> bestNodes = predictRelatedNodes(node, totalNodes,  Direction.OUTGOING);
                 if (bestNodes.size()<10){
-                    bestNodes = predictRelatedNodes(node, bestNodes, Direction.BOTH);
+                    bestNodes.putAll(predictRelatedNodes(node, totalNodes - bestNodes.size(), Direction.BOTH));          
                 }
                 String nodesString = "";
                 for(Long n:bestNodes.keySet()){
@@ -326,7 +326,8 @@ public class Graph {
             }
         }
         
-        private Map<Long,Double> predictRelatedNodes(Node origin, Map<Long,Double> predictedNodes, Direction direction){
+        private Map<Long,Double> predictRelatedNodes(Node origin, Integer totalNodes, Direction direction){
+            Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
             ValueComparator bvc = new ValueComparator(predictedNodes);
             TreeMap<Long,Double> sortedMap = new TreeMap(bvc);
             
@@ -342,11 +343,11 @@ public class Graph {
                 if(depth<2)
                     continue;
                 if(elapsedTime > TIME_LIMIT){
-                    if(predictedNodes.size()>=10)
+                    if(predictedNodes.size()>=totalNodes)
                         break;
                 }
                 if (iterationsWithoutImprovement>50 || depth > maxDepth)
-                    if(predictedNodes.size()<10){
+                    if(predictedNodes.size()<totalNodes){
                         maxDepth++;
                         iterationsWithoutImprovement = 0;
                     } else {
@@ -356,7 +357,7 @@ public class Graph {
                 Double weight = getRelationshipWeight(origin,position.endNode(), depth, direction);
                 if (weight>0)
                     predictedNodes.put(position.endNode().getId(), weight);
-                if (predictedNodes.size()>10){
+                if (predictedNodes.size()>totalNodes){
                     sortedMap.clear();
                     sortedMap.putAll(predictedNodes);
                     predictedNodes.clear();
@@ -366,7 +367,7 @@ public class Graph {
                         predictedNodes.put(entry.getKey(), entry.getValue());
                         newAvgWeight+=entry.getValue();
                         i++;
-                        if(i>=10)
+                        if(i>=totalNodes)
                             break;
                     }                    
                     newAvgWeight /=10.0;
@@ -377,7 +378,7 @@ public class Graph {
                     }
                     prevAvgWeight = newAvgWeight;               
                 }           
-                elapsedTime = System.currentTimeMillis()-startTime;
+                elapsedTime = System.currentTimeMillis()- startTime;
                 //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
             }
             
