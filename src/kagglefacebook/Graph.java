@@ -435,7 +435,7 @@ public class Graph {
                         break;
                     }
 
-                Double weight = getRelationshipWeight(origin,position.endNode(), depth+1);
+                Double weight = getRelationshipWeight(origin,position.endNode(), depth);
                 if (weight>0)
                     predictedNodes.put(position.endNode().getId(), weight);
                 if (predictedNodes.size()>10){
@@ -469,7 +469,7 @@ public class Graph {
    
         private Double getRelationshipWeight(Node from, Node to, int maxDepth){
             PathFinder<Path> finder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(),maxDepth);       
-            Iterable<Path> paths = finder.findAllPaths(from, to);                   
+            Iterable<Path> paths = finder.findAllPaths(from, to);
             Double weight = 0.0;
             Double pathCount = 0.0;
             Double avgPathLength = 0.0;
