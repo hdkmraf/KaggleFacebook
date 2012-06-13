@@ -16,9 +16,11 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.neo4j.graphalgo.GraphAlgoFactory;
 import org.neo4j.graphalgo.PathFinder;
+import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Path;
+import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.index.Index;
@@ -46,14 +48,9 @@ public class Graph {
     private String DIR;
     private boolean newDB;
     
-    private final int MAX_THREADS = 7;
+    private final int MAX_THREADS = Runtime.getRuntime().availableProcessors();
     private final long TIME_LIMIT = 10000;
-    
-    private final TraversalDescription PREDICTION_TRAVERSAL = 
-            Traversal.description()
-            .breadthFirst()
-            .relationships(facebookRelationshipTypes.relation)
-            .uniqueness(Uniqueness.NODE_GLOBAL);
+       
     private String NL = System.getProperty("line.separator");
     private Random random = new Random();
     private Map<String, String> config = new HashMap<String, String>();
@@ -83,6 +80,7 @@ public class Graph {
     }
     
     private void startDB(){
+        System.out.println("Starting GraphDB with "+MAX_THREADS+" procesors");
         // START SNIPPET: startDb
         //graphDb = new GraphDatabaseFactory().newEmbeddedDatabase( DB_PATH );
         graphDb = new EmbeddedGraphDatabase( DB_PATH , config);
@@ -226,96 +224,7 @@ public class Graph {
        
        System.out.println("Finished predicting "+resultFile);             
    }
-       
-       
-   /*       
-   private Map<Long,Double> predictRelatedNodes(Node origin){
-       Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
-       ValueComparator bvc = new ValueComparator(predictedNodes);
-       TreeMap<Long,Double> sortedMap = new TreeMap(bvc);
-       int iterationsWithoutImprovement = 0;
-       Double prevAvgWeight = 0.0;
-       int depth = 0;
-       int maxDepth = 2;       
-       long elapsedTime = 0;
-       long startTime = System.currentTimeMillis();
-       for(Path position: PREDICTION_TRAVERSAL.traverse(origin)){           
-           depth = position.length();
-           if(depth<2)
-               continue;
-           if(elapsedTime > TIME_LIMIT){
-                if(predictedNodes.size()>=10)
-                    break;
-           }
-           if (iterationsWithoutImprovement>50 || depth > maxDepth)
-               if(predictedNodes.size()<10){
-                   maxDepth++;
-                   iterationsWithoutImprovement = 0;
-               } else {
-                   break;
-               }
-
-           Double weight = getRelationshipWeight(origin,position.endNode(), depth+1);
-           if (weight>0)
-               predictedNodes.put(position.endNode().getId(), weight);
-           if (predictedNodes.size()>10){
-               sortedMap.clear();
-               sortedMap.putAll(predictedNodes);
-               predictedNodes.clear();
-               int i=0;
-               Double newAvgWeight = 0.0;
-               for(Map.Entry<Long, Double> entry:  sortedMap.entrySet()){
-                   predictedNodes.put(entry.getKey(), entry.getValue());
-                   newAvgWeight+=entry.getValue();
-                   i++;
-                   if(i>=10)
-                       break;
-               }                    
-               newAvgWeight /=10.0;
-               if(newAvgWeight <= prevAvgWeight){
-                   iterationsWithoutImprovement++;
-               } else {
-                   iterationsWithoutImprovement = 0;
-               }
-               prevAvgWeight = newAvgWeight;               
-           }           
-           elapsedTime = System.currentTimeMillis()-startTime;
-           System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
-       }
-       return predictedNodes;
-   }
-   
-   
-   private Double getRelationshipWeight(Node from, Node to, int maxDepth){
-       PathFinder<Path> finder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(),maxDepth);       
-       Iterable<Path> paths = finder.findAllPaths(from, to);                   
-       Double weight = 0.0;
-       Double pathCount = 0.0;
-       Double avgPathLength = 0.0;
-       for(Path path:paths){
-           Double pathLength = Double.valueOf(path.length());
-           if(pathLength>1){
-               weight += 1.0/pathLength;
-               avgPathLength += pathLength;
-               pathCount++;
-           } 
-           else
-               return 0.0;
-       }
-       avgPathLength /= pathCount;
-       //weight /= pathCount;
-       Double rand = random.nextDouble();
-       if (rand<0.5){
-           rand *= -1.0;
-       }
-       rand *= 0.000001;
-       //System.out.println(weight+":"+avgPathLength+":"+pathCount);
-       return weight+rand;
-   }
-   
-   */
- 
-   
+        
     public class LoadBatch implements Runnable{
         
         private List<String> lines;
@@ -387,6 +296,10 @@ public class Graph {
     public class PredictBatch implements Runnable{       
         private List<Long> nodes;
         private String outFile;
+        private final TraversalDescription PREDICTION_TRAVERSAL = 
+            Traversal.description()
+            .breadthFirst()
+            .uniqueness(Uniqueness.NODE_GLOBAL);       
         
         public PredictBatch(List<Long> nodes, String outfile){
             this.nodes = nodes;            
@@ -397,7 +310,11 @@ public class Graph {
         public void run() {
             for(Long nodeId: nodes){
                 Node node = graphDb.getNodeById(nodeId);
-                Map<Long,Double> bestNodes = predictRelatedNodes(node);
+                Map<Long,Double> bestNodes = new HashMap<Long,Double>();
+                bestNodes = predictRelatedNodes(node, bestNodes,  Direction.OUTGOING);
+                if (bestNodes.size()<10){
+                    bestNodes = predictRelatedNodes(node, bestNodes, Direction.BOTH);
+                }
                 String nodesString = "";
                 for(Long n:bestNodes.keySet()){
                     nodesString = nodesString + n + " ";
@@ -409,17 +326,18 @@ public class Graph {
             }
         }
         
-        private Map<Long,Double> predictRelatedNodes(Node origin){
-            Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
+        private Map<Long,Double> predictRelatedNodes(Node origin, Map<Long,Double> predictedNodes, Direction direction){
             ValueComparator bvc = new ValueComparator(predictedNodes);
             TreeMap<Long,Double> sortedMap = new TreeMap(bvc);
+            
             int iterationsWithoutImprovement = 0;
             Double prevAvgWeight = 0.0;
             int depth = 0;
             int maxDepth = 2;       
             long elapsedTime = 0;
             long startTime = System.currentTimeMillis();
-            for(Path position: PREDICTION_TRAVERSAL.traverse(origin)){           
+            
+            for(Path position: PREDICTION_TRAVERSAL.relationships(facebookRelationshipTypes.relation, direction).traverse(origin)){           
                 depth = position.length();
                 if(depth<2)
                     continue;
@@ -435,7 +353,7 @@ public class Graph {
                         break;
                     }
 
-                Double weight = getRelationshipWeight(origin,position.endNode(), depth);
+                Double weight = getRelationshipWeight(origin,position.endNode(), depth, direction);
                 if (weight>0)
                     predictedNodes.put(position.endNode().getId(), weight);
                 if (predictedNodes.size()>10){
@@ -462,34 +380,35 @@ public class Graph {
                 elapsedTime = System.currentTimeMillis()-startTime;
                 //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
             }
+            
             //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
             return predictedNodes;
         }
    
    
-        private Double getRelationshipWeight(Node from, Node to, int maxDepth){
-            PathFinder<Path> finder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(),maxDepth);       
-            Iterable<Path> paths = finder.findAllPaths(from, to);
+        private Double getRelationshipWeight(Node from, Node to, int maxDepth, Direction direction){
+            PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(direction),maxDepth);       
+            Iterable<Path> paths = outFinder.findAllPaths(from, to);
             Double weight = 0.0;
             Double pathCount = 0.0;
             Double avgPathLength = 0.0;
-            for(Path path:paths){
+            for(Path path:paths){            
                 Double pathLength = Double.valueOf(path.length());
                 if(pathLength>1){
-                    weight += 1.0/pathLength;
+                    weight += 1.0/Math.pow(2,pathLength);
                     avgPathLength += pathLength;
                     pathCount++;
                 } 
                 else
                     return 0.0;
-            }
+            }           
             avgPathLength /= pathCount;
             //weight /= pathCount;
             Double rand = random.nextDouble();
             if (rand<0.5){
                 rand *= -1.0;
             }
-            rand *= 0.000001;
+            rand *= 0.000000001;
             //System.out.println(weight+":"+avgPathLength+":"+pathCount);
             return weight+rand;
         }
