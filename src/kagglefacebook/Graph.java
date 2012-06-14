@@ -14,6 +14,7 @@ import java.util.Random;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.apache.commons.math3.analysis.function.Pow;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.neo4j.graphalgo.GraphAlgoFactory;
 import org.neo4j.graphalgo.PathFinder;
@@ -50,7 +51,6 @@ public class Graph {
     private boolean newDB;
     
     private final int MAX_THREADS = Runtime.getRuntime().availableProcessors();
-    private final long TIME_LIMIT = 10000;
        
     private String NL = System.getProperty("line.separator");
     private Random random = new Random();
@@ -205,6 +205,8 @@ public class Graph {
            threads.add(new Thread(new PredictBatch(batch, batchFile)));            
            threads.get(threads.size()-1).start();           
        }
+       
+       lines = null;
         
        for (Thread thread: threads){
            try {
@@ -213,6 +215,7 @@ public class Graph {
                Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
            }
        }
+       
        
        String resultFile = DIR+"result.csv";
        Helper.writeToFile(resultFile, "source_node,destination_nodes"+NL, false);
@@ -298,9 +301,12 @@ public class Graph {
         private List<Long> nodes;
         private String outFile;
         
-        private Double OUTGOING_WEIGHT = 1.0;
-        private Double INCOMING_WEIGHT = 0.1;
-        private Integer EXTRA_DEPTH = 1;
+        private final Double OUTGOING_WEIGHT = 1.0;
+        private final Double INCOMING_WEIGHT = 0.1;
+        private final Integer MAX_DEPTH = 2;
+        private final Integer EXTRA_DEPTH = 1;
+        private final Integer MAX_ITERATIONS = 100;
+        private final Long TIME_LIMIT = 10000L;
         
         private final TraversalDescription PREDICTION_TRAVERSAL = 
             Traversal.description()
@@ -340,9 +346,8 @@ public class Graph {
             TreeMap<Long,Double> sortedMap = new TreeMap(bvc);            
             
             int iterationsWithoutImprovement = 0;
-            Double prevAvgWeight = 0.0;
-            int depth = 0;
-            int maxDepth = 2;       
+            Double prevMeanWeight = 0.0;
+            int depth = 0;                   
             long elapsedTime = 0;
             long startTime = System.currentTimeMillis();
             
@@ -350,17 +355,14 @@ public class Graph {
                 depth = position.length();
                 if(depth<2)
                     continue;
+                if(depth > MAX_DEPTH)
+                    break;
                 if(elapsedTime > TIME_LIMIT){
                     if(predictedNodes.size()>=totalNodes)
                         break;
                 }
-                if (iterationsWithoutImprovement>50 || depth > maxDepth)
-                    if(predictedNodes.size()<totalNodes){
-                        maxDepth++;
-                        iterationsWithoutImprovement = 0;
-                    } else {
-                        break;
-                    }
+                if (iterationsWithoutImprovement > MAX_ITERATIONS)                    
+                    break;
                 Node endNode = position.endNode();
                 Double weight = 0.0;
                 if(!bestNodes.containsKey(endNode.getId()))
@@ -370,23 +372,23 @@ public class Graph {
                 if (predictedNodes.size()>totalNodes){
                     sortedMap.clear();
                     sortedMap.putAll(predictedNodes);
-                    predictedNodes.clear();
+                    predictedNodes.clear();                 
+                    SummaryStatistics stats = new SummaryStatistics();
                     int i=0;
-                    Double newAvgWeight = 0.0;
                     for(Map.Entry<Long, Double> entry:  sortedMap.entrySet()){
                         predictedNodes.put(entry.getKey(), entry.getValue());
-                        newAvgWeight+=entry.getValue();
+                        stats.addValue(entry.getValue());
                         i++;
                         if(i>=totalNodes)
                             break;
                     }                    
-                    newAvgWeight /=10.0;
-                    if(newAvgWeight <= prevAvgWeight){
-                        iterationsWithoutImprovement++;
-                    } else {
+                    Double newMeanWeight =  stats.getMean();
+                    if(newMeanWeight > prevMeanWeight){
                         iterationsWithoutImprovement = 0;
+                    } else {
+                        iterationsWithoutImprovement++;
                     }
-                    prevAvgWeight = newAvgWeight;               
+                    prevMeanWeight = newMeanWeight;           
                 }           
                 elapsedTime = System.currentTimeMillis()- startTime;
                 //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
@@ -412,12 +414,12 @@ public class Graph {
                     Double relationshipWeight = 0.0;
                     if(direction.equals(Direction.OUTGOING)){
                         for(int i=0; i<pathLength; i++){
-                            pathWeight += Math.pow(2,i*-1.0);
+                            pathWeight += Math.pow(2,-1*i);
                         }
                         pathWeight *= OUTGOING_WEIGHT;
                     } else if(direction.equals(Direction.INCOMING)){
                         for(int i=0; i<pathLength; i++){
-                            pathWeight += Math.pow(2,i*-1.0);
+                            pathWeight += Math.pow(2,-1*i);
                         }
                         pathWeight *= INCOMING_WEIGHT;
                     } else {
@@ -427,9 +429,9 @@ public class Graph {
                         for (Relationship relationship : path.relationships()){
                             node2 = relationship.getOtherNode(node1);
                             if (relationship.getStartNode().equals(node1)){
-                                relationshipWeight += (OUTGOING_WEIGHT*Math.pow(2,i*-1.0));                                
+                                relationshipWeight += (OUTGOING_WEIGHT*Math.pow(2,-1*i));                                
                             } else {
-                                relationshipWeight += (INCOMING_WEIGHT*Math.pow(2,i*-1.0));
+                                relationshipWeight += (INCOMING_WEIGHT*Math.pow(2,-1*i));
                             }
                             pathWeight += relationshipWeight;
                             node1 = node2;
