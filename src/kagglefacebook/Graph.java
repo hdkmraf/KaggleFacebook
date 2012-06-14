@@ -311,9 +311,10 @@ public class Graph {
             for(Long nodeId: nodes){
                 Node node = graphDb.getNodeById(nodeId);
                 int totalNodes = 10;
-                Map<Long,Double> bestNodes = predictRelatedNodes(node, totalNodes,  Direction.OUTGOING);
-                if (bestNodes.size()<10){
-                    bestNodes.putAll(predictRelatedNodes(node, totalNodes - bestNodes.size(), Direction.BOTH));          
+                Map<Long,Double> bestNodes = new HashMap<Long,Double>();
+                bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING);
+                if (bestNodes.size()<totalNodes){
+                    bestNodes.putAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
                 }
                 String nodesString = "";
                 for(Long n:bestNodes.keySet()){
@@ -326,10 +327,10 @@ public class Graph {
             }
         }
         
-        private Map<Long,Double> predictRelatedNodes(Node origin, Integer totalNodes, Direction direction){
+        private Map<Long,Double> predictRelatedNodes(Node origin, Map<Long,Double> bestNodes, Integer totalNodes, Direction direction){
             Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
             ValueComparator bvc = new ValueComparator(predictedNodes);
-            TreeMap<Long,Double> sortedMap = new TreeMap(bvc);
+            TreeMap<Long,Double> sortedMap = new TreeMap(bvc);            
             
             int iterationsWithoutImprovement = 0;
             Double prevAvgWeight = 0.0;
@@ -353,8 +354,10 @@ public class Graph {
                     } else {
                         break;
                     }
-
-                Double weight = getRelationshipWeight(origin,position.endNode(), depth, direction);
+                Node endNode = position.endNode();
+                Double weight = 0.0;
+                if(!bestNodes.containsKey(endNode.getId()))
+                    weight = getRelationshipWeight(origin,endNode, depth, direction);
                 if (weight>0)
                     predictedNodes.put(position.endNode().getId(), weight);
                 if (predictedNodes.size()>totalNodes){
@@ -389,10 +392,10 @@ public class Graph {
    
         private Double getRelationshipWeight(Node from, Node to, int maxDepth, Direction direction){
             PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(direction),maxDepth);       
-            Iterable<Path> paths = outFinder.findAllPaths(from, to);
+            Iterable<Path> paths = outFinder.findAllPaths(from, to);            
             Double weight = 0.0;
             Double pathCount = 0.0;
-            Double avgPathLength = 0.0;
+            Double avgPathLength = 0.0;            
             for(Path path:paths){            
                 Double pathLength = Double.valueOf(path.length());
                 if(pathLength>1){
