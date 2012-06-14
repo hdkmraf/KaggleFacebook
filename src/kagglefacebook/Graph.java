@@ -11,10 +11,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.apache.commons.math3.analysis.function.Pow;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.neo4j.graphalgo.GraphAlgoFactory;
 import org.neo4j.graphalgo.PathFinder;
@@ -34,6 +32,7 @@ import org.neo4j.kernel.Uniqueness;
 import org.neo4j.kernel.impl.util.FileUtils;
 import org.neo4j.unsafe.batchinsert.BatchInserter;
 import org.neo4j.unsafe.batchinsert.BatchInserters;
+import scala.actors.threadpool.Arrays;
 
 
 /**
@@ -51,6 +50,7 @@ public class Graph {
     private boolean newDB;
     
     private final int MAX_THREADS = Runtime.getRuntime().availableProcessors();
+    //private final int MAX_THREADS = 1;
        
     private String NL = System.getProperty("line.separator");
     private Random random = new Random();
@@ -295,7 +295,7 @@ public class Graph {
             return node;        
         }  
         
-    }
+    }        
      
     public class PredictBatch implements Runnable{       
         private List<Long> nodes;
@@ -324,14 +324,14 @@ public class Graph {
             for(Long nodeId: nodes){
                 Node node = graphDb.getNodeById(nodeId);
                 int totalNodes = 10;
-                Map<Long,Double> bestNodes = new HashMap<Long,Double>();
+                List<NodeStats> bestNodes = new ArrayList<NodeStats>();
                 bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING);
                 if (bestNodes.size()<totalNodes){
-                    bestNodes.putAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
+                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
                 }
                 String nodesString = "";
-                for(Long n:bestNodes.keySet()){
-                    nodesString = nodesString + n + " ";
+                for(NodeStats n:bestNodes){
+                    nodesString = nodesString + n.NODE_ID + " ";
                 }
                 if(nodesString.length()>0)
                     nodesString = nodesString.substring(0, nodesString.length()-1);
@@ -340,10 +340,8 @@ public class Graph {
             }
         }
         
-        private Map<Long,Double> predictRelatedNodes(Node origin, Map<Long,Double> bestNodes, Integer totalNodes, Direction direction){
-            Map<Long,Double> predictedNodes = new HashMap<Long,Double>();
-            ValueComparator bvc = new ValueComparator(predictedNodes);
-            TreeMap<Long,Double> sortedMap = new TreeMap(bvc);            
+        private List<NodeStats> predictRelatedNodes(Node origin, List<NodeStats> bestNodes, Integer totalNodes, Direction direction){
+            List<NodeStats> predictedNodes = new ArrayList<NodeStats>();        
             
             int iterationsWithoutImprovement = 0;
             Double prevMeanWeight = 0.0;
@@ -352,6 +350,7 @@ public class Graph {
             long startTime = System.currentTimeMillis();
             
             for(Path position: PREDICTION_TRAVERSAL.relationships(facebookRelationshipTypes.relation, direction).traverse(origin)){           
+                String print = "";
                 depth = position.length();
                 if(depth<2)
                     continue;
@@ -365,23 +364,31 @@ public class Graph {
                     break;
                 Node endNode = position.endNode();
                 Double weight = 0.0;
-                if(!bestNodes.containsKey(endNode.getId()))
+                
+                Boolean nodeIn = false;
+                for(NodeStats n : bestNodes){
+                    if(n.NODE_ID.equals(endNode.getId())){
+                        nodeIn = true;
+                        break;
+                    }
+                }
+                
+                if(!nodeIn)
                     weight = getRelationshipWeight(origin,endNode, depth+EXTRA_DEPTH, direction);
                 if (weight>0)
-                    predictedNodes.put(position.endNode().getId(), weight);
+                    predictedNodes.add(new NodeStats(position.endNode().getId(), weight));
                 if (predictedNodes.size()>totalNodes){
-                    sortedMap.clear();
-                    sortedMap.putAll(predictedNodes);
-                    predictedNodes.clear();                 
+                    Object[] nodesArray = predictedNodes.toArray();
+                    Arrays.sort(nodesArray);
+                    predictedNodes.clear();
+                    predictedNodes.addAll(Arrays.asList(nodesArray).subList(1, nodesArray.length));         
                     SummaryStatistics stats = new SummaryStatistics();
-                    int i=0;
-                    for(Map.Entry<Long, Double> entry:  sortedMap.entrySet()){
-                        predictedNodes.put(entry.getKey(), entry.getValue());
-                        stats.addValue(entry.getValue());
-                        i++;
-                        if(i>=totalNodes)
-                            break;
-                    }                    
+                                        
+                    for(NodeStats n:  predictedNodes){            
+                        stats.addValue(n.WEIGHT);                    
+                       print += n.WEIGHT+" ";
+                    }                                        
+                    
                     Double newMeanWeight =  stats.getMean();
                     if(newMeanWeight > prevMeanWeight){
                         iterationsWithoutImprovement = 0;
@@ -391,10 +398,11 @@ public class Graph {
                     prevMeanWeight = newMeanWeight;           
                 }           
                 elapsedTime = System.currentTimeMillis()- startTime;
-                //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
+                
+                print = depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+print;
+                //System.out.println(print);
             }
-            
-            //System.out.println(depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+sortedMap.toString());
+            //System.out.println();
             return predictedNodes;
         }
    
@@ -408,32 +416,29 @@ public class Graph {
             Double pathCount = 0.0;
             Double avgPathLength = 0.0;            
             for(Path path:paths){ 
-                Double pathWeight = 0.0;
+                SummaryStatistics pathWeight = new SummaryStatistics();
                 Double pathLength = Double.valueOf(path.length());
-                if(pathLength>1){                                      
-                    Double relationshipWeight = 0.0;
+                if(pathLength>1){                    
                     if(direction.equals(Direction.OUTGOING)){
                         for(int i=0; i<pathLength; i++){
-                            pathWeight += Math.pow(2,-1*i);
+                            pathWeight.addValue(OUTGOING_WEIGHT*Math.pow(2,-1*i));
                         }
-                        pathWeight *= OUTGOING_WEIGHT;
                     } else if(direction.equals(Direction.INCOMING)){
                         for(int i=0; i<pathLength; i++){
-                            pathWeight += Math.pow(2,-1*i);
+                            pathWeight.addValue(INCOMING_WEIGHT*Math.pow(2,-1*i));
                         }
-                        pathWeight *= INCOMING_WEIGHT;
                     } else {
                         Node node1 = from;
                         Node node2;
                         int i=0;
+                        
                         for (Relationship relationship : path.relationships()){
                             node2 = relationship.getOtherNode(node1);
                             if (relationship.getStartNode().equals(node1)){
-                                relationshipWeight += (OUTGOING_WEIGHT*Math.pow(2,-1*i));                                
+                                pathWeight.addValue(OUTGOING_WEIGHT*Math.pow(2,-1*i));                              
                             } else {
-                                relationshipWeight += (INCOMING_WEIGHT*Math.pow(2,-1*i));
+                                pathWeight.addValue(INCOMING_WEIGHT*Math.pow(2,-1*i));
                             }
-                            pathWeight += relationshipWeight;
                             node1 = node2;
                             i++;
                         }
@@ -443,24 +448,43 @@ public class Graph {
                 } 
                 else
                     return 0.0;
-                stats.addValue(pathWeight);
+                stats.addValue(pathWeight.getMean());
             }           
             avgPathLength /= pathCount;
+                        
             
-            Double rand = random.nextDouble();
-            if (rand<0.5){
-                rand *= -1.0;
-            }
-            rand *= 0.0000000001;
-            //System.out.println(stats.toString());
+            Double nodeWeight = stats.getMean()*stats.getN();
             Double std = stats.getStandardDeviation();
-            Double nodeWeight = 0.0;
             if(std>0)
-                nodeWeight = ((stats.getMean()*stats.getN())/stats.getStandardDeviation())+rand;
-            else
-                nodeWeight = (stats.getMean()*stats.getN())+rand;
+                nodeWeight /= std;
+            
+            //System.out.println(stats.toString());
             //System.out.println(nodeWeight+":"+avgPathLength+":"+pathCount);
             return nodeWeight;
+        }       
+        
+    }
+    
+    
+    public class NodeStats implements Comparable{        
+        public Long NODE_ID;
+        public Double WEIGHT;
+        
+        
+        public NodeStats(Long nodeid, Double weight){
+            this.NODE_ID = nodeid;
+            this.WEIGHT = weight;
+        }        
+
+        @Override
+        public int compareTo(Object t) {
+            NodeStats n = (NodeStats) t;
+            if (this.WEIGHT > n.WEIGHT)
+                return 1;
+            else if (this.WEIGHT < n.WEIGHT)
+                return -1;
+            else
+                return 0;            
         }
         
     }
