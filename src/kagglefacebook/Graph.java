@@ -14,6 +14,7 @@ import java.util.Random;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.neo4j.graphalgo.GraphAlgoFactory;
 import org.neo4j.graphalgo.PathFinder;
 import org.neo4j.graphdb.Direction;
@@ -296,10 +297,16 @@ public class Graph {
     public class PredictBatch implements Runnable{       
         private List<Long> nodes;
         private String outFile;
+        
+        private Double OUTGOING_WEIGHT = 1.0;
+        private Double INCOMING_WEIGHT = 0.1;
+        private Integer EXTRA_DEPTH = 1;
+        
         private final TraversalDescription PREDICTION_TRAVERSAL = 
             Traversal.description()
             .breadthFirst()
-            .uniqueness(Uniqueness.NODE_GLOBAL);       
+            .uniqueness(Uniqueness.NODE_GLOBAL);      
+        
         
         public PredictBatch(List<Long> nodes, String outfile){
             this.nodes = nodes;            
@@ -357,7 +364,7 @@ public class Graph {
                 Node endNode = position.endNode();
                 Double weight = 0.0;
                 if(!bestNodes.containsKey(endNode.getId()))
-                    weight = getRelationshipWeight(origin,endNode, depth, direction);
+                    weight = getRelationshipWeight(origin,endNode, depth+EXTRA_DEPTH, direction);
                 if (weight>0)
                     predictedNodes.put(position.endNode().getId(), weight);
                 if (predictedNodes.size()>totalNodes){
@@ -392,29 +399,66 @@ public class Graph {
    
         private Double getRelationshipWeight(Node from, Node to, int maxDepth, Direction direction){
             PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(direction),maxDepth);       
-            Iterable<Path> paths = outFinder.findAllPaths(from, to);            
-            Double weight = 0.0;
+            Iterable<Path> paths = outFinder.findAllPaths(from, to);
+            
+            SummaryStatistics stats = new SummaryStatistics();
+            
             Double pathCount = 0.0;
             Double avgPathLength = 0.0;            
-            for(Path path:paths){            
+            for(Path path:paths){ 
+                Double pathWeight = 0.0;
                 Double pathLength = Double.valueOf(path.length());
-                if(pathLength>1){
-                    weight += 1.0/Math.pow(2,pathLength);
+                if(pathLength>1){                                      
+                    Double relationshipWeight = 0.0;
+                    if(direction.equals(Direction.OUTGOING)){
+                        for(int i=0; i<pathLength; i++){
+                            pathWeight += Math.pow(2,i*-1.0);
+                        }
+                        pathWeight *= OUTGOING_WEIGHT;
+                    } else if(direction.equals(Direction.INCOMING)){
+                        for(int i=0; i<pathLength; i++){
+                            pathWeight += Math.pow(2,i*-1.0);
+                        }
+                        pathWeight *= INCOMING_WEIGHT;
+                    } else {
+                        Node node1 = from;
+                        Node node2;
+                        int i=0;
+                        for (Relationship relationship : path.relationships()){
+                            node2 = relationship.getOtherNode(node1);
+                            if (relationship.getStartNode().equals(node1)){
+                                relationshipWeight += (OUTGOING_WEIGHT*Math.pow(2,i*-1.0));                                
+                            } else {
+                                relationshipWeight += (INCOMING_WEIGHT*Math.pow(2,i*-1.0));
+                            }
+                            pathWeight += relationshipWeight;
+                            node1 = node2;
+                            i++;
+                        }
+                    }
                     avgPathLength += pathLength;
                     pathCount++;
                 } 
                 else
                     return 0.0;
+                stats.addValue(pathWeight);
             }           
             avgPathLength /= pathCount;
-            //weight /= pathCount;
+            
             Double rand = random.nextDouble();
             if (rand<0.5){
                 rand *= -1.0;
             }
-            rand *= 0.000000001;
-            //System.out.println(weight+":"+avgPathLength+":"+pathCount);
-            return weight+rand;
+            rand *= 0.0000000001;
+            //System.out.println(stats.toString());
+            Double std = stats.getStandardDeviation();
+            Double nodeWeight = 0.0;
+            if(std>0)
+                nodeWeight = ((stats.getMean()*stats.getN())/stats.getStandardDeviation())+rand;
+            else
+                nodeWeight = (stats.getMean()*stats.getN())+rand;
+            //System.out.println(nodeWeight+":"+avgPathLength+":"+pathCount);
+            return nodeWeight;
         }
         
     }
