@@ -26,6 +26,7 @@ import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.index.Index;
 import org.neo4j.graphdb.index.IndexHits;
 import org.neo4j.graphdb.traversal.TraversalDescription;
+import org.neo4j.graphdb.traversal.Traverser;
 import org.neo4j.kernel.EmbeddedGraphDatabase;
 import org.neo4j.kernel.Traversal;
 import org.neo4j.kernel.Uniqueness;
@@ -304,9 +305,9 @@ public class Graph {
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
         private final Integer MAX_DEPTH = 2;
-        private final Integer EXTRA_DEPTH = 1;
-        private final Integer MAX_ITERATIONS = 100;
-        private final Long TIME_LIMIT = 10000L;
+        private final Integer EXTRA_DEPTH = 0;
+        private final Integer MAX_ITERATIONS = 1000;
+        private final Long TIME_LIMIT = 60000L;
         
         private final TraversalDescription PREDICTION_TRAVERSAL = 
             Traversal.description()
@@ -348,8 +349,8 @@ public class Graph {
             int depth = 0;                   
             long elapsedTime = 0;
             long startTime = System.currentTimeMillis();
-            
-            for(Path position: PREDICTION_TRAVERSAL.relationships(facebookRelationshipTypes.relation, direction).traverse(origin)){           
+            Traverser traverser = PREDICTION_TRAVERSAL.relationships(facebookRelationshipTypes.relation, direction).traverse(origin);
+            for(Path position: traverser){              
                 String print = "";
                 depth = position.length();
                 if(depth<2)
@@ -400,9 +401,9 @@ public class Graph {
                 elapsedTime = System.currentTimeMillis()- startTime;
                 
                 print = depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+print;
-                //System.out.println(print);
+                System.out.println(print);
             }
-            //System.out.println();
+            System.out.println();
             return predictedNodes;
         }
    
@@ -453,10 +454,11 @@ public class Graph {
             avgPathLength /= pathCount;
                         
             
-            Double nodeWeight = stats.getMean()*stats.getN();
-            Double std = stats.getStandardDeviation();
-            if(std>0)
-                nodeWeight /= std;
+            //Double nodeWeight = stats.getMean()*stats.getN();
+            Double nodeWeight = stats.getSum();
+            //Double std = stats.getStandardDeviation();
+            //if(std>0)
+              //  nodeWeight /= std;
             
             //System.out.println(stats.toString());
             //System.out.println(nodeWeight+":"+avgPathLength+":"+pathCount);
