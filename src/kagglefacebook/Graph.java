@@ -272,7 +272,7 @@ public class Graph {
    }
    
      
-   public void validateResult(String resultFile, String testFile){
+   public void validateResult(String testFile, String resultFile){
        String[] resultLines = Helper.readFile(DIR+resultFile).split(NL);
        String[] testLines = Helper.readFile(DIR+testFile).split(NL);              
        SummaryStatistics totalAccuracy = new SummaryStatistics();
@@ -298,14 +298,15 @@ public class Graph {
                    Double correct = total - compareSet.size();                        
                    nodeAccuracy = correct / compareSet.size();
                }
-           }         
+           }    
+           System.out.println(i+":"+tl[0]+":"+nodeAccuracy);
            totalAccuracy.addValue(nodeAccuracy);                      
        }
        System.out.println("Accuracy:"+totalAccuracy.getSummary());
    }
            
    
-   public void makePredictions(String file){   
+   public void makePredictions(String file, String resultFile){   
        startReadOnlyDB();
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("makePredictions "+DIR+file);
@@ -316,7 +317,7 @@ public class Graph {
        for(int i=1; i<lines.length;){
            List<Long> batch = new ArrayList<Long>();
            for(int j=0; j<batchSize && i<lines.length; j++){
-               batch.add(Long.valueOf(lines[i]));
+               batch.add(Long.valueOf(lines[i].split(",")[0]));
                i++;           
            }      
            String batchFile = DIR+"batch_"+batchCount;
@@ -337,8 +338,8 @@ public class Graph {
        }
        
        
-       String resultFile = DIR+"result.csv";
-       Helper.writeToFile(resultFile, "source_node,destination_nodes"+NL, false);
+       resultFile = DIR+resultFile;
+       Helper.writeToFile(resultFile, "source_node,destination_nodes"+NL, true);
        for (String batchFile:batchFiles){
            lines = Helper.readFile(batchFile).split(NL);
            for (String line: lines){
@@ -424,10 +425,11 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Integer MAX_DEPTH = 3;
+        private final Double MIN_WEIGHT = 1.0;
+        private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
-        private final Integer MAX_ITERATIONS = 1000;
-        private final Long TIME_LIMIT = 60000L;
+        private final Integer MAX_ITERATIONS = 10000;
+        private final Long TIME_LIMIT = 60000L;        
         
         private final TraversalDescription PREDICTION_TRAVERSAL = 
             Traversal.description()
@@ -438,6 +440,7 @@ public class Graph {
         public PredictBatch(List<Long> nodes, String outfile){
             this.nodes = nodes;            
             this.outFile = outfile;
+            Helper.writeToFile(outFile, "", true);
         }
 
         @Override
@@ -447,9 +450,9 @@ public class Graph {
                 int totalNodes = 10;
                 List<NodeStats> bestNodes = new ArrayList<NodeStats>();
                 bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING);
-                //if (bestNodes.size()<totalNodes){
-                  //  bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
-                //}
+                if (bestNodes.size()<totalNodes){
+                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
+                }
                 String nodesString = "";
                 for(NodeStats n:bestNodes){
                     nodesString = nodesString + n.NODE_ID + " ";
@@ -495,8 +498,8 @@ public class Graph {
                 }
                 
                 if(!nodeIn)
-                    weight = getRelationshipWeight(origin,endNode, depth+EXTRA_DEPTH, direction);
-                if (weight>0)
+                    weight = getRelationshipWeightAdamic(origin,endNode, depth+EXTRA_DEPTH, direction);
+                if (weight>MIN_WEIGHT)
                     predictedNodes.add(new NodeStats(position.endNode().getId(), weight));
                 if (predictedNodes.size()>totalNodes){
                     Object[] nodesArray = predictedNodes.toArray();
@@ -506,7 +509,7 @@ public class Graph {
                     SummaryStatistics stats = new SummaryStatistics();
                                         
                     for(NodeStats n:  predictedNodes){            
-                        stats.addValue(n.WEIGHT);                    
+                       stats.addValue(n.WEIGHT);                    
                        print += n.WEIGHT+" ";
                     }                                        
                     
@@ -528,7 +531,7 @@ public class Graph {
         }
    
    
-        private Double getRelationshipWeight(Node from, Node to, int maxDepth, Direction direction){
+        private Double getRelationshipWeightA(Node from, Node to, int maxDepth, Direction direction){
             
             PathFinder<Path> singleFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(Direction.BOTH),1);
             PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(direction),maxDepth);
@@ -539,7 +542,7 @@ public class Graph {
             Set<Node> previousNodes = new HashSet<Node>();
             
             Double pathCount = 0.0;
-            Double avgPathLength = 0.0;            
+            Double avgPathLength = 0.0;               
             for(Path path:paths){
                 SummaryStatistics pathWeight = new SummaryStatistics();
                 Double pathLength = Double.valueOf(path.length());
@@ -599,6 +602,41 @@ public class Graph {
             //System.out.println(nodeWeight+":"+avgPathLength+":"+pathCount);
             return nodeWeight;
         }       
+        
+        private Double getRelationshipWeightAdamic(Node from, Node to, int maxDepth, Direction direction){
+            Double relationshipWeight = 0.0;
+            SummaryStatistics relWeight = new SummaryStatistics();
+            
+            Iterable<Relationship> fromRelationships = from.getRelationships(Direction.BOTH);
+            Iterable<Relationship> toRelationships = to.getRelationships(Direction.BOTH);
+            //Set<Node> fromNodes = new HashSet<Node>();
+            Map<Node,Double> fromNodes = new HashMap<Node,Double>();
+            
+            for(Relationship fr : fromRelationships){
+                if(fr.getStartNode().equals(from))
+                    fromNodes.put(fr.getOtherNode(from),OUTGOING_WEIGHT);
+                else
+                    fromNodes.put(fr.getOtherNode(from),INCOMING_WEIGHT);
+            }
+            Double toNeighbourCount = 0.0;
+            for(Relationship tr : toRelationships){
+                Node n = tr.getOtherNode(to);                
+                if(fromNodes.containsKey(n)){
+                    if(tr.getEndNode().equals(to))
+                        relWeight.addValue((OUTGOING_WEIGHT+fromNodes.get(n))/2.0);
+                    else
+                        relWeight.addValue((INCOMING_WEIGHT+fromNodes.get(n))/2.0);
+                }
+                toNeighbourCount++;
+            }  
+            if (toNeighbourCount>1)
+                relationshipWeight = relWeight.getSum()/Math.log(toNeighbourCount);
+            else
+                relationshipWeight = relWeight.getSum();
+            
+            //System.out.println(relationshipWeight+" "+relWeight.getSummary());            
+            return relationshipWeight;
+        }
         
     }
     
