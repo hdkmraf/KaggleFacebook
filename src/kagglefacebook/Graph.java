@@ -208,36 +208,40 @@ public class Graph {
   
    
    public void splitIntoSets(Integer totalSets, Integer testSetSize, Integer relationshipsPerNode){
+       System.out.println("splitIntoSets Total sets:"+totalSets+" Set size:"+testSetSize+" Rels per node:"+relationshipsPerNode );
+       
        startReadOnlyDB();
        AbstractGraphDatabase abstractGraph = (AbstractGraphDatabase)graphDb;
-       Long totalNodes = abstractGraph.getNodeManager().getNumberOfIdsInUse(Node.class);       
-       
-       File dbDir = new File(DB_PATH);
+       Long totalNodes = abstractGraph.getNodeManager().getNumberOfIdsInUse(Node.class);              
+       File dbDir = new File(DB_PATH);       
+       Set<Long> testNodes = new HashSet<Long>();
        
        for (int i=0; i<totalSets; i++){
            String outFile = DIR + "test_" + i;
-           String outDB =DIR+"train_"+i+".db";
-           String line = "";        
+           String outDB =DIR+"train_"+i+".db";      
            File outDBDir = new File(outDB);
-            try {
-                FileUtils.copyRecursively(dbDir, outDBDir);
-            } catch (IOException ex) {
-                Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
-            }
+           try {
+               FileUtils.copyRecursively(dbDir, outDBDir);
+           } catch (IOException ex) {
+               Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
+           }
            Graph outGraph = new Graph(DIR, outDB, false);
            outGraph.startDB();
            for (int j=0; j<testSetSize; j++) {
+               String line = "";  
                Node node = null;
                Long fromId = null;
-               while (node == null){
+               while (node == null || testNodes.contains(fromId)){
                    fromId = 1+((long)(Math.random()*totalNodes));
                    try{
                        node = graphDb.getNodeById(fromId);
                    } catch (Exception e){
                        continue;
                    }
+                   //System.out.println(fromId);
                }
                
+               testNodes.add(fromId);
                Iterable<Relationship> relationships = node.getRelationships(facebookRelationshipTypes.relation, Direction.OUTGOING);               
                line += fromId+",";
                int k = 0;
@@ -258,12 +262,11 @@ public class Graph {
                    k++;
                }
                line = line.substring(0, line.length()-1)+NL;
-           }
-           Helper.writeToFile(outFile, line, false);
+               Helper.writeToFile(outFile, line, false);
+           }           
            outGraph.shutDownDB();
-       }
-       
-       
+           System.out.println("Finished "+outFile);
+       }              
        shutDownDB();       
    }
    
