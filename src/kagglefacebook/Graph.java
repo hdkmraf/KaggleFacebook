@@ -8,9 +8,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
@@ -27,7 +29,9 @@ import org.neo4j.graphdb.index.Index;
 import org.neo4j.graphdb.index.IndexHits;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Traverser;
+import org.neo4j.kernel.AbstractGraphDatabase;
 import org.neo4j.kernel.EmbeddedGraphDatabase;
+import org.neo4j.kernel.EmbeddedReadOnlyGraphDatabase;
 import org.neo4j.kernel.Traversal;
 import org.neo4j.kernel.Uniqueness;
 import org.neo4j.kernel.impl.util.FileUtils;
@@ -78,10 +82,9 @@ public class Graph {
        config.put("dump_configuration","true");
        config.put("cache_type","none");
        config.put("neostore.nodestore.db.mapped_memory","500M");
-        startDB();
     }
     
-    private void startDB(){
+    public void startDB(){
         System.out.println("Starting GraphDB with "+MAX_THREADS+" procesors");
         // START SNIPPET: startDb
         //graphDb = new GraphDatabaseFactory().newEmbeddedDatabase( DB_PATH );
@@ -91,61 +94,21 @@ public class Graph {
         // END SNIPPET: startDb
     }
     
-    public void loadFromCSV(String file){
-        String[] lines = Helper.readFile(DIR+file).split(NL);
-        System.out.println("Loading "+DIR+file);
-        int batchSize = (lines.length-1)/MAX_THREADS;
-        List<Thread> threads = new ArrayList<Thread>();
-        
-        for(int i=1; i<lines.length;){
-            List<String> batch = new ArrayList<String>();
-            for(int j=0; j<batchSize && i<lines.length; j++){
-                batch.add(lines[i]);
-                i++;
-            }            
-            threads.add(new Thread(new LoadBatch(batch)));            
-            threads.get(threads.size()-1).start();
-        }
-        
-        for (Thread thread: threads){
-            try {
-                thread.join();
-            } catch (InterruptedException ex) {
-                Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
-            }
-        }
-        System.out.println("Finished loading "+DIR+file);
+    public void startReadOnlyDB(){
+        System.out.println("Starting GraphDB with "+MAX_THREADS+" procesors");
+        // START SNIPPET: startDb
+        //graphDb = new GraphDatabaseFactory().newEmbeddedDatabase( DB_PATH );
+        graphDb = new EmbeddedReadOnlyGraphDatabase( DB_PATH , config);
+        nameIndex = graphDb.index().forNodes(NAME_KEY);
+        registerShutdownHook( graphDb );
+        // END SNIPPET: startDb
     }
     
-   
-   public void batchInsertFromCSV(String file){
-       graphDb.shutdown();
-       
-       String[] lines = Helper.readFile(DIR+file).split(NL);
-       System.out.println("batchInserterFromCSV "+DIR+file);
-       
-       BatchInserter inserter = BatchInserters.inserter(DB_PATH, config);       
-       
-       for (int i=1; i< lines.length; i++){
-           Map<String,Object> properties = new HashMap<String, Object>();
-           String[] names = lines[i].split(",");
-           long node1 = Long.valueOf(names[0]);
-           long node2 = Long.valueOf(names[1]);           
-           if(!inserter.nodeExists(node1)){
-               properties.put(NAME_KEY, node1);
-               inserter.createNode(node1,properties);
-           }                          
-           if(!inserter.nodeExists(node2)){
-               properties.put(NAME_KEY, node2);
-               inserter.createNode(node2,properties);
-           } 
-           inserter.createRelationship(node1, node2, facebookRelationshipTypes.relation, null);       
-       }
-       inserter.shutdown();      
-       startDB();
-   }
+    private void shutDownDB(){
+        graphDb.shutdown();
+    }
     
-   private enum facebookRelationshipTypes implements RelationshipType{
+     private enum facebookRelationshipTypes implements RelationshipType{
        relation
    }
    
@@ -186,8 +149,126 @@ public class Graph {
         } );
     }
     // END SNIPPET: shutdownHook
+    
+    public void loadFromCSV(String file){
+        startDB();
+        String[] lines = Helper.readFile(DIR+file).split(NL);
+        System.out.println("Loading "+DIR+file);
+        int batchSize = (lines.length-1)/MAX_THREADS;
+        List<Thread> threads = new ArrayList<Thread>();
+        
+        for(int i=1; i<lines.length;){
+            List<String> batch = new ArrayList<String>();
+            for(int j=0; j<batchSize && i<lines.length; j++){
+                batch.add(lines[i]);
+                i++;
+            }            
+            threads.add(new Thread(new LoadBatch(batch)));            
+            threads.get(threads.size()-1).start();
+        }
+        
+        for (Thread thread: threads){
+            try {
+                thread.join();
+            } catch (InterruptedException ex) {
+                Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        System.out.println("Finished loading "+DIR+file);
+        shutDownDB();
+    }
+    
    
-   public void makePredictions(String file){     
+   public void batchInsertFromCSV(String file){
+       startDB();
+       
+       String[] lines = Helper.readFile(DIR+file).split(NL);
+       System.out.println("batchInserterFromCSV "+DIR+file);
+       
+       BatchInserter inserter = BatchInserters.inserter(DB_PATH, config);       
+       
+       for (int i=1; i< lines.length; i++){
+           Map<String,Object> properties = new HashMap<String, Object>();
+           String[] names = lines[i].split(",");
+           long node1 = Long.valueOf(names[0]);
+           long node2 = Long.valueOf(names[1]);           
+           if(!inserter.nodeExists(node1)){
+               properties.put(NAME_KEY, node1);
+               inserter.createNode(node1,properties);
+           }                          
+           if(!inserter.nodeExists(node2)){
+               properties.put(NAME_KEY, node2);
+               inserter.createNode(node2,properties);
+           } 
+           inserter.createRelationship(node1, node2, facebookRelationshipTypes.relation, null);       
+       }
+       shutDownDB();
+   }
+    
+  
+   
+   public void splitIntoSets(Integer totalSets, Integer testSetSize, Integer relationshipsPerNode){
+       startReadOnlyDB();
+       AbstractGraphDatabase abstractGraph = (AbstractGraphDatabase)graphDb;
+       Long totalNodes = abstractGraph.getNodeManager().getNumberOfIdsInUse(Node.class);       
+       
+       File dbDir = new File(DB_PATH);
+       
+       for (int i=0; i<totalSets; i++){
+           String outFile = DIR + "test_" + i;
+           String outDB =DIR+"train_"+i+".db";
+           String line = "";        
+           File outDBDir = new File(outDB);
+            try {
+                FileUtils.copyRecursively(dbDir, outDBDir);
+            } catch (IOException ex) {
+                Logger.getLogger(Graph.class.getName()).log(Level.SEVERE, null, ex);
+            }
+           Graph outGraph = new Graph(DIR, outDB, false);
+           outGraph.startDB();
+           for (int j=0; j<testSetSize; j++) {
+               Node node = null;
+               Long fromId = null;
+               while (node == null){
+                   fromId = 1+((long)(Math.random()*totalNodes));
+                   try{
+                       node = graphDb.getNodeById(fromId);
+                   } catch (Exception e){
+                       continue;
+                   }
+               }
+               
+               Iterable<Relationship> relationships = node.getRelationships(facebookRelationshipTypes.relation, Direction.OUTGOING);               
+               line += fromId+",";
+               int k = 0;
+               for (Relationship relationship: relationships){
+                   if(k>= relationshipsPerNode)
+                       break;
+                   Long toId = relationship.getEndNode().getId();
+                   line += toId+" ";
+                   Transaction outTx = outGraph.graphDb.beginTx();
+                   try{                        
+                       outGraph.graphDb.getRelationshipById(relationship.getId()).delete();
+                       outTx.success();
+                   } catch (Exception ex){
+                       ex.getMessage();
+                   } finally {
+                       outTx.finish();
+                   }                   
+                   k++;
+               }
+               line = line.substring(0, line.length()-1)+NL;
+           }
+           Helper.writeToFile(outFile, line, false);
+           outGraph.shutDownDB();
+       }
+       
+       
+       shutDownDB();       
+   }
+   
+   public void makePredictions(String file){   
+       startReadOnlyDB();
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("makePredictions "+DIR+file);
        int batchSize = (lines.length-1)/MAX_THREADS;
@@ -227,7 +308,8 @@ public class Graph {
            }
        }
        
-       System.out.println("Finished predicting "+resultFile);             
+       System.out.println("Finished predicting "+resultFile); 
+       shutDownDB();
    }
         
     public class LoadBatch implements Runnable{
@@ -304,7 +386,7 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Integer MAX_DEPTH = 2;
+        private final Integer MAX_DEPTH = 3;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
         private final Long TIME_LIMIT = 60000L;
@@ -327,9 +409,9 @@ public class Graph {
                 int totalNodes = 10;
                 List<NodeStats> bestNodes = new ArrayList<NodeStats>();
                 bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING);
-                if (bestNodes.size()<totalNodes){
-                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
-                }
+                //if (bestNodes.size()<totalNodes){
+                  //  bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
+                //}
                 String nodesString = "";
                 for(NodeStats n:bestNodes){
                     nodesString = nodesString + n.NODE_ID + " ";
@@ -401,25 +483,41 @@ public class Graph {
                 elapsedTime = System.currentTimeMillis()- startTime;
                 
                 print = depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+print;
-                System.out.println(print);
+                //System.out.println(print);
             }
-            System.out.println();
+            //System.out.println();
             return predictedNodes;
         }
    
    
         private Double getRelationshipWeight(Node from, Node to, int maxDepth, Direction direction){
-            PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(direction),maxDepth);       
+            
+            PathFinder<Path> singleFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(Direction.BOTH),1);
+            PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(direction),maxDepth);
+            
             Iterable<Path> paths = outFinder.findAllPaths(from, to);
             
             SummaryStatistics stats = new SummaryStatistics();
+            Set<Node> previousNodes = new HashSet<Node>();
             
             Double pathCount = 0.0;
             Double avgPathLength = 0.0;            
-            for(Path path:paths){ 
+            for(Path path:paths){
                 SummaryStatistics pathWeight = new SummaryStatistics();
                 Double pathLength = Double.valueOf(path.length());
-                if(pathLength>1){                    
+                
+                for (Node n1 : path.nodes()){
+                    if(!n1.equals(from) || !n1.equals(to)){
+                        for (Node n2 : previousNodes){
+                            if(singleFinder.findSinglePath(n1, n2) != null){
+                                stats.addValue(1);
+                            }
+                        }
+                        previousNodes.add(n1);
+                    }
+                }
+
+                if(pathLength>1){
                     if(direction.equals(Direction.OUTGOING)){
                         for(int i=0; i<pathLength; i++){
                             pathWeight.addValue(OUTGOING_WEIGHT*Math.pow(2,-1*i));
@@ -452,8 +550,7 @@ public class Graph {
                 stats.addValue(pathWeight.getMean());
             }           
             avgPathLength /= pathCount;
-                        
-            
+                                                       
             //Double nodeWeight = stats.getMean()*stats.getN();
             Double nodeWeight = stats.getSum();
             //Double std = stats.getStandardDeviation();
