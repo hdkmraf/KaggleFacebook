@@ -227,6 +227,7 @@ public class Graph {
            }
            Graph outGraph = new Graph(DIR, outDB, false);
            outGraph.startDB();
+           Helper.writeToFile(outFile, "source_node,destination_nodes"+NL, false);
            for (int j=0; j<testSetSize; j++) {
                String line = "";  
                Node node = null;
@@ -269,6 +270,33 @@ public class Graph {
        }              
        shutDownDB();       
    }
+   
+     
+   public void validateResult(String resultFile, String testFile){
+       String[] resultLines = Helper.readFile(DIR+resultFile).split(NL);
+       String[] testLines = Helper.readFile(DIR+testFile).split(NL);              
+       SummaryStatistics totalAccuracy = new SummaryStatistics();
+       
+       for(int i=1; i<testLines.length && i<resultLines.length; i++){
+           String[] rl = resultLines[i].split(",");
+           String[] tl =testLines[i].split(",");
+           SummaryStatistics nodeAccuracy = new SummaryStatistics();
+           if(rl[0] == null ? tl[0] == null : rl[0].equals(tl[0])){
+               String[] resultSet = rl[1].split(" ");
+               HashSet<String> testSet = (HashSet<String>) Arrays.asList(tl[1].split(" "));
+               for(String result: resultSet){
+                   if(testSet.contains(result)){
+                       nodeAccuracy.addValue(1);
+                   } else {
+                       nodeAccuracy.addValue(0);
+                   }
+               }
+           } 
+           totalAccuracy.addValue(nodeAccuracy.getMean());
+       }
+       System.out.print("Accuracy:"+totalAccuracy.getSum());
+   }
+           
    
    public void makePredictions(String file){   
        startReadOnlyDB();
