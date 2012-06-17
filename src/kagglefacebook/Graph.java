@@ -279,22 +279,29 @@ public class Graph {
        
        for(int i=1; i<testLines.length && i<resultLines.length; i++){
            String[] rl = resultLines[i].split(",");
-           String[] tl =testLines[i].split(",");
-           SummaryStatistics nodeAccuracy = new SummaryStatistics();
+           String[] tl = testLines[i].split(",");
+           Double nodeAccuracy = 1.0;
            if(rl[0] == null ? tl[0] == null : rl[0].equals(tl[0])){
-               String[] resultSet = rl[1].split(" ");
-               HashSet<String> testSet = (HashSet<String>) Arrays.asList(tl[1].split(" "));
-               for(String result: resultSet){
-                   if(testSet.contains(result)){
-                       nodeAccuracy.addValue(1);
-                   } else {
-                       nodeAccuracy.addValue(0);
-                   }
+               HashSet<String> resultSet = new HashSet<String>();
+               if(rl.length>1)
+                   resultSet.addAll(Arrays.asList(rl[1].split(" ")));
+               
+               HashSet<String> testSet = new HashSet<String>();                              
+               if(tl.length>1)
+                   testSet.addAll(Arrays.asList(tl[1].split(" ")));
+               
+               HashSet<String> compareSet = new HashSet<String>();
+               Double total = (double)(testSet.size()+resultSet.size());               
+               if(total>0){
+                   compareSet.addAll(testSet);               
+                   compareSet.addAll(resultSet);
+                   Double correct = total - compareSet.size();                        
+                   nodeAccuracy = correct / compareSet.size();
                }
-           } 
-           totalAccuracy.addValue(nodeAccuracy.getMean());
+           }         
+           totalAccuracy.addValue(nodeAccuracy);                      
        }
-       System.out.print("Accuracy:"+totalAccuracy.getSum());
+       System.out.println("Accuracy:"+totalAccuracy.getSummary());
    }
            
    

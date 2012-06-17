@@ -26,9 +26,11 @@ public class KaggleFacebook {
           //  graph.loadFromCSV("train.csv");
             graph.batchInsertFromCSV("train.csv");
         
-        graph.splitIntoSets(10, 10000, 10);
+        //graph.splitIntoSets(10, 10000, 10);
         
         //graph.makePredictions("test.csv");
+        
+        graph.validateResult("test_0", "test_0");
         
         
     }
