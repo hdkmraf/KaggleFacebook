@@ -28,7 +28,6 @@ import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.index.Index;
 import org.neo4j.graphdb.index.IndexHits;
-import org.neo4j.graphdb.traversal.Evaluator;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Traverser;
@@ -57,8 +56,8 @@ public class Graph {
     private String DIR;
     private boolean newDB;
     
-    //private final int MAX_THREADS = Runtime.getRuntime().availableProcessors();
-    private final int MAX_THREADS = 1;
+    private final int MAX_THREADS = Runtime.getRuntime().availableProcessors();
+    //private final int MAX_THREADS = 1;
        
     private String NL = System.getProperty("line.separator");
     private Random random = new Random();
@@ -429,7 +428,7 @@ public class Graph {
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
         private final Double MIN_WEIGHT = 0.0;
-        private final Integer MAX_DEPTH = 2;
+        private final Integer MAX_DEPTH = 3;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
         private final Long TIME_LIMIT = 60000L;        
@@ -530,10 +529,10 @@ public class Graph {
                     elapsedTime = System.currentTimeMillis()- startTime;
                 
                     print = depth+":"+iterationsWithoutImprovement+":"+elapsedTime+":"+print;
-                    System.out.println(print);
+                    //System.out.println(print);
                 }
             }
-            System.out.println();
+            //System.out.println();
             return predictedNodes;
         }
    
