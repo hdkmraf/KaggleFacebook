@@ -428,7 +428,7 @@ public class Graph {
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
         private final Double MIN_WEIGHT = 0.0;
-        private final Integer MAX_DEPTH = 3;
+        private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
         private final Long TIME_LIMIT = 60000L;        
@@ -454,9 +454,9 @@ public class Graph {
                 int totalNodes = 10;
                 List<NodeStats> bestNodes = new ArrayList<NodeStats>();
                 bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING);
-                //if (bestNodes.size()<totalNodes){
-                  //  bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
-                //}
+                if (bestNodes.size()<totalNodes){
+                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
+                }
                 String nodesString = "";
                 for(NodeStats n:bestNodes){
                     nodesString = nodesString + n.NODE_ID + " ";
@@ -675,30 +675,33 @@ public class Graph {
         private Double getRelationshipWeightSimRank(Node x, Node y, int maxDepth, Direction direction, int depth){            
             if(x.equals(y))
                 return 1.0;            
-            else if(depth>maxDepth)
-                return 0.0;
+            else if(depth>=maxDepth)
+                return 0.5;
             
             Double DECAY = 0.6;
             Double relationshipWeight = 0.0;            
             Iterable<Relationship> xRelationships = x.getRelationships(direction);
-            Iterable<Relationship> yRelationships = y.getRelationships(Direction.INCOMING);
+            Iterable<Relationship> yRelationships = y.getRelationships(Direction.BOTH);
                         
             SummaryStatistics relWeight = new SummaryStatistics();
             Integer xNeighbours = 0;
             Integer yNeighbours = 0;
+            boolean firstPass = true;
             for(Relationship xr : xRelationships){
                 Node a = xr.getOtherNode(x);                 
                 xNeighbours++;
-                yNeighbours = 0;
                 for(Relationship yr : yRelationships){                                    
                     Node b = yr.getOtherNode(y);
                     Double score = getRelationshipWeightSimRank(a, b, maxDepth, direction, depth+1);
                     relWeight.addValue(score);
-                    yNeighbours++;
+                    if(firstPass)
+                        yNeighbours++;
                 }
+                firstPass = false;
             }            
             
-            relationshipWeight = (DECAY*relWeight.getSum())/(xNeighbours*yNeighbours);                                                                            
+            relationshipWeight = (DECAY*relWeight.getSum())/(xNeighbours*yNeighbours);       
+            //System.out.println(relationshipWeight);
             return relationshipWeight;
         }
         
