@@ -503,7 +503,8 @@ public class Graph {
                 
                     if(!nodeIn)
                         //weight = getRelationshipWeightAdamic(origin,endNode, depth+EXTRA_DEPTH, direction);
-                        weight = getRelationshipWeightKatz(origin,endNode, depth+EXTRA_DEPTH, direction);
+                        //weight = getRelationshipWeightKatz(origin,endNode, depth+EXTRA_DEPTH, direction);
+                        weight = getRelationshipWeightSimRank(origin,endNode, depth+EXTRA_DEPTH, direction,0);
                     if (weight>MIN_WEIGHT)
                         predictedNodes.add(new NodeStats(endNode.getId(), weight));
                     if (predictedNodes.size()>totalNodes){
@@ -652,7 +653,7 @@ public class Graph {
             PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(direction),maxDepth);            
             Iterable<Path> paths = outFinder.findAllPaths(from, to);
             
-            Double BETA = 0.1;
+            Double BETA = 0.6;
             Map<Integer,Integer> pathCount = new HashMap<Integer,Integer>();
             for(Path path: paths){
                 Integer lenght = path.length();
@@ -670,7 +671,36 @@ public class Graph {
             //System.out.println(relWeight.getSummary());
             return relationshipWeight;
         }
-
+        
+        private Double getRelationshipWeightSimRank(Node x, Node y, int maxDepth, Direction direction, int depth){            
+            if(x.equals(y))
+                return 1.0;            
+            else if(depth>maxDepth)
+                return 0.0;
+            
+            Double DECAY = 0.6;
+            Double relationshipWeight = 0.0;            
+            Iterable<Relationship> xRelationships = x.getRelationships(direction);
+            Iterable<Relationship> yRelationships = y.getRelationships(Direction.INCOMING);
+                        
+            SummaryStatistics relWeight = new SummaryStatistics();
+            Integer xNeighbours = 0;
+            Integer yNeighbours = 0;
+            for(Relationship xr : xRelationships){
+                Node a = xr.getOtherNode(x);                 
+                xNeighbours++;
+                yNeighbours = 0;
+                for(Relationship yr : yRelationships){                                    
+                    Node b = yr.getOtherNode(y);
+                    Double score = getRelationshipWeightSimRank(a, b, maxDepth, direction, depth+1);
+                    relWeight.addValue(score);
+                    yNeighbours++;
+                }
+            }            
+            
+            relationshipWeight = (DECAY*relWeight.getSum())/(xNeighbours*yNeighbours);                                                                            
+            return relationshipWeight;
+        }
         
     }
     
