@@ -427,7 +427,7 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Double MIN_WEIGHT = 0.0;
+        private final Double MIN_WEIGHT = 0.05;
         private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
@@ -453,10 +453,10 @@ public class Graph {
                 Node node = graphDb.getNodeById(nodeId);
                 int totalNodes = 10;
                 List<NodeStats> bestNodes = new ArrayList<NodeStats>();
-                bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING);
-                if (bestNodes.size()<totalNodes){
-                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
-                }
+                bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.BOTH);
+                //if (bestNodes.size()<totalNodes){
+                  //  bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
+                //}
                 String nodesString = "";
                 for(NodeStats n:bestNodes){
                     nodesString = nodesString + n.NODE_ID + " ";
@@ -726,8 +726,14 @@ public class Graph {
                 return 1;
             else if (this.WEIGHT < n.WEIGHT)
                 return -1;
-            else
-                return 0;            
+            else{                            
+                if(this.NODE_ID > n.NODE_ID)
+                    return 1;
+                else if(this.NODE_ID < n.NODE_ID)
+                    return -1;
+                else
+                    return 0;            
+            }
         }
         
     }
