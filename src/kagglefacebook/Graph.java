@@ -352,6 +352,27 @@ public class Graph {
        System.out.println("Finished predicting "+resultFile); 
        shutDownDB();
    }
+     
+   
+   public void getCorrectWeights(String testFile){
+       startReadOnlyDB();
+       Map<Long,Set<Long>> rels = new HashMap<Long,Set<Long>>();
+       String[] lines = Helper.readFile(DIR+testFile).split(NL);
+       for(int i=1; i<lines.length; i++){
+           Set<Long> targets = new HashSet<Long>();
+           String[] pairs = lines[i].split(",");           
+           if(pairs.length>1){
+               for(String target: pairs[1].split(" ")){
+                   targets.add(Long.valueOf(target));
+               }
+           }
+           rels.put(Long.valueOf(pairs[0]), targets);           
+       }              
+       
+       new PredictBatch(new ArrayList<Long>(), "test_batch").correctWeights(rels, Direction.BOTH);
+       
+       shutDownDB();
+   }
         
     public class LoadBatch implements Runnable{
         
@@ -427,7 +448,7 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Double MIN_WEIGHT = 0.05;
+        private final Double MIN_WEIGHT = 0.09;
         private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
@@ -466,6 +487,20 @@ public class Graph {
                 Helper.writeToFile(outFile, nodeId+","+nodesString+NL, false);
                 //System.out.println(nodeId+","+nodesString);
             }
+        }
+        
+        public void correctWeights(Map<Long,Set<Long>> rels, Direction direction){
+            SummaryStatistics stats = new SummaryStatistics();
+            for(Long nodeId: rels.keySet()){
+                Node source = graphDb.getNodeById(nodeId);
+                for(Long t: rels.get(nodeId)){
+                    Node target = graphDb.getNodeById(t);                    
+                    Double weight = getRelationshipWeightSimRank(source, target, MAX_DEPTH, direction,0);
+                    stats.addValue(weight);
+                    System.out.println(nodeId+" : "+t+" = "+weight);
+                }
+            }
+            System.out.print(stats.getSummary());
         }
         
         private List<NodeStats> predictRelatedNodes(Node origin, List<NodeStats> bestNodes, Integer totalNodes, Direction direction){
@@ -688,14 +723,18 @@ public class Graph {
             Integer yNeighbours = 0;
             boolean firstPass = true;
             for(Relationship xr : xRelationships){
-                Node a = xr.getOtherNode(x);                 
+                Node a = xr.getOtherNode(x);                                
                 xNeighbours++;
                 for(Relationship yr : yRelationships){                                    
                     Node b = yr.getOtherNode(y);
-                    Double score = getRelationshipWeightSimRank(a, b, maxDepth, direction, depth+1);
-                    relWeight.addValue(score);
                     if(firstPass)
                         yNeighbours++;
+                    if(b.equals(x))
+                        relWeight.addValue(0.0);
+                    else{
+                        Double score = getRelationshipWeightSimRank(a, b, maxDepth, direction, depth+1);
+                        relWeight.addValue(score);                    
+                    }
                 }
                 firstPass = false;
             }            
