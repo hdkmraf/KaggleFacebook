@@ -4,6 +4,7 @@
  */
 package kagglefacebook;
 
+import com.google.common.collect.Sets;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -31,12 +32,14 @@ import org.neo4j.graphdb.index.IndexHits;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Traverser;
+import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.kernel.AbstractGraphDatabase;
 import org.neo4j.kernel.EmbeddedGraphDatabase;
 import org.neo4j.kernel.EmbeddedReadOnlyGraphDatabase;
 import org.neo4j.kernel.Traversal;
 import org.neo4j.kernel.Uniqueness;
 import org.neo4j.kernel.impl.util.FileUtils;
+import org.neo4j.tooling.GlobalGraphOperations;
 import org.neo4j.unsafe.batchinsert.BatchInserter;
 import org.neo4j.unsafe.batchinsert.BatchInserters;
 import scala.actors.threadpool.Arrays;
@@ -66,7 +69,7 @@ public class Graph {
       
    
     
-    
+   
     public Graph(String dir, String db_path, boolean newdb){
         DIR = dir;
         DB_PATH = db_path;
@@ -75,15 +78,15 @@ public class Graph {
             clearDb();
         }
        config.put("use_memory_mapped_buffers","false");
-       config.put("neostore.propertystore.db.index.keys.mapped_memory","5M");
-       config.put("neostore.propertystore.db.strings.mapped_memory","100M");
-       config.put("neostore.propertystore.db.arrays.mapped_memory","107M");
+       config.put("neostore.propertystore.db.index.keys.mapped_memory","2000M");
+       config.put("neostore.propertystore.db.strings.mapped_memory","2000M");
+       config.put("neostore.propertystore.db.arrays.mapped_memory","2000M");
        config.put("neostore.relationshipstore.db.mapped_memory","2000M");
-       config.put("neostore.propertystore.db.index.mapped_memory","5M");
-       config.put("neostore.propertystore.db.mapped_memory","1000M");
+       config.put("neostore.propertystore.db.index.mapped_memory","2000M");
+       config.put("neostore.propertystore.db.mapped_memory","2000M");
+       config.put("neostore.nodestore.db.mapped_memory","2000M");
        config.put("dump_configuration","true");
-       config.put("cache_type","none");
-       config.put("neostore.nodestore.db.mapped_memory","500M");
+       config.put("cache_type","strong");     
     }
     
     public void startDB(){
@@ -106,9 +109,6 @@ public class Graph {
         // END SNIPPET: startDb
     }
     
-    private void shutDownDB(){
-        graphDb.shutdown();
-    }
     
      private enum facebookRelationshipTypes implements RelationshipType{
        relation
@@ -128,7 +128,7 @@ public class Graph {
     }
     
    
-   void shutDown(){
+   void shutDownDB(){
         System.out.println();
         System.out.println( "Shutting down database ..." );
         // START SNIPPET: shutdownServer
@@ -151,9 +151,19 @@ public class Graph {
         } );
     }
     // END SNIPPET: shutdownHook
+   
+   public void cacheFullGraph(){
+       long memory = Runtime.getRuntime().totalMemory();
+       System.out.println("Loading graph into cache...");
+       GlobalGraphOperations operations = GlobalGraphOperations.at(graphDb);
+       for (Node n : operations.getAllNodes()){
+           IteratorUtil.count(n.getRelationships());
+       }
+       memory = Runtime.getRuntime().totalMemory() - memory;
+       System.out.println("Graph memory = "+memory+ "bytes");
+   }
     
     public void loadFromCSV(String file){
-        startDB();
         String[] lines = Helper.readFile(DIR+file).split(NL);
         System.out.println("Loading "+DIR+file);
         int batchSize = (lines.length-1)/MAX_THREADS;
@@ -177,12 +187,10 @@ public class Graph {
             }
         }
         System.out.println("Finished loading "+DIR+file);
-        shutDownDB();
     }
     
    
    public void batchInsertFromCSV(String file){
-       startDB();
        
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("batchInserterFromCSV "+DIR+file);
@@ -204,7 +212,6 @@ public class Graph {
            } 
            inserter.createRelationship(node1, node2, facebookRelationshipTypes.relation, null);       
        }
-       shutDownDB();
    }
     
   
@@ -212,7 +219,6 @@ public class Graph {
    public void splitIntoSets(Integer totalSets, Integer testSetSize, Integer relationshipsPerNode){
        System.out.println("splitIntoSets Total sets:"+totalSets+" Set size:"+testSetSize+" Rels per node:"+relationshipsPerNode );
        
-       startReadOnlyDB();
        AbstractGraphDatabase abstractGraph = (AbstractGraphDatabase)graphDb;
        Long totalNodes = abstractGraph.getNodeManager().getNumberOfIdsInUse(Node.class);              
        File dbDir = new File(DB_PATH);       
@@ -269,8 +275,7 @@ public class Graph {
            }           
            outGraph.shutDownDB();
            System.out.println("Finished "+outFile);
-       }              
-       shutDownDB();       
+       }                   
    }
    
      
@@ -309,7 +314,6 @@ public class Graph {
            
    
    public void makePredictions(String file, String resultFile){   
-       startReadOnlyDB();
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("makePredictions "+DIR+file);
        int batchSize = (lines.length-1)/MAX_THREADS;
@@ -350,12 +354,10 @@ public class Graph {
        }
        
        System.out.println("Finished predicting "+resultFile); 
-       shutDownDB();
    }
      
    
    public void getCorrectWeights(String testFile){
-       startReadOnlyDB();
        Map<Long,Set<Long>> rels = new HashMap<Long,Set<Long>>();
        String[] lines = Helper.readFile(DIR+testFile).split(NL);
        for(int i=1; i<lines.length; i++){
@@ -371,7 +373,6 @@ public class Graph {
        
        new PredictBatch(new ArrayList<Long>(), "test_batch").correctWeights(rels, Direction.BOTH);
        
-       shutDownDB();
    }
         
     public class LoadBatch implements Runnable{
@@ -711,20 +712,21 @@ public class Graph {
             if(x.equals(y))
                 return 1.0;            
             else if(depth>=maxDepth)
-                return 0.5;
+                return 0.0;
             
             Double DECAY = 0.6;
             Double relationshipWeight = 0.0;            
-            Iterable<Relationship> xRelationships = x.getRelationships(Direction.BOTH);
-            Iterable<Relationship> yRelationships = y.getRelationships(Direction.BOTH);
-                        
+            Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.BOTH));               
+            Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.BOTH));
+            
+            
             SummaryStatistics relWeight = new SummaryStatistics();
             Integer xNeighbours = 0;
             Integer yNeighbours = 0;
             boolean firstPass = true;
             for(Relationship xr : xRelationships){
                 Node a = xr.getOtherNode(x);                                
-                xNeighbours++;
+                xNeighbours++;            
                 for(Relationship yr : yRelationships){                                    
                     Node b = yr.getOtherNode(y);
                     if(firstPass)
