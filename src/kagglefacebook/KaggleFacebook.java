@@ -27,9 +27,11 @@ public class KaggleFacebook {
         }
         
         
-        //int selector = 0;
-        //Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
-        //trainGraph.makePredictions("test_"+selector, "result_"+selector );      
-        //trainGraph.validateResult("test_"+selector, "result_"+selector);               
+        if(false){
+            int selector = 0;        
+            Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
+            trainGraph.makePredictions("test_"+selector, "result_"+selector );      
+            trainGraph.validateResult("test_"+selector, "result_"+selector);               
+        }
     }
 }

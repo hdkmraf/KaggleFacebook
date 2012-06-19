@@ -715,7 +715,7 @@ public class Graph {
             
             Double DECAY = 0.6;
             Double relationshipWeight = 0.0;            
-            Iterable<Relationship> xRelationships = x.getRelationships(direction);
+            Iterable<Relationship> xRelationships = x.getRelationships(Direction.BOTH);
             Iterable<Relationship> yRelationships = y.getRelationships(Direction.BOTH);
                         
             SummaryStatistics relWeight = new SummaryStatistics();
