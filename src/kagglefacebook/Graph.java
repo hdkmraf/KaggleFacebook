@@ -449,7 +449,7 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Double MIN_WEIGHT = 0.09;
+        private final Double MIN_WEIGHT = 0.01;
         private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
@@ -498,7 +498,7 @@ public class Graph {
                     Node target = graphDb.getNodeById(t);                    
                     Double weight = getRelationshipWeightSimRank(source, target, MAX_DEPTH, direction,0);
                     stats.addValue(weight);
-                    System.out.println(nodeId+" : "+t+" = "+weight);
+                    System.out.println(nodeId+" : "+t+" = "+weight+" - "+stats.getMean());
                 }
             }
             System.out.print(stats.getSummary());
@@ -716,8 +716,8 @@ public class Graph {
             
             Double DECAY = 0.6;
             Double relationshipWeight = 0.0;            
-            Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.BOTH));               
-            Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.BOTH));
+            Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.OUTGOING));               
+            Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.INCOMING));
             
             
             SummaryStatistics relWeight = new SummaryStatistics();
@@ -734,6 +734,7 @@ public class Graph {
                     if(b.equals(x))
                         relWeight.addValue(0.0);
                     else{
+                        //System.out.println(a.getId()+" => "+b.getId());
                         Double score = getRelationshipWeightSimRank(a, b, maxDepth, direction, depth+1);
                         relWeight.addValue(score);                    
                     }
@@ -741,7 +742,9 @@ public class Graph {
                 firstPass = false;
             }            
             
-            relationshipWeight = (DECAY*relWeight.getSum())/(xNeighbours*yNeighbours);       
+            Integer mul = xNeighbours*yNeighbours;
+            if(mul > 0)
+                relationshipWeight = (DECAY*relWeight.getSum())/mul;       
             //System.out.println(relationshipWeight);
             return relationshipWeight;
         }

@@ -27,7 +27,7 @@ public class KaggleFacebook {
             }
             //graph.splitIntoSets(10, 10000, 10);
             graph.startReadOnlyDB();
-            graph.cacheFullGraph();
+            //graph.cacheFullGraph();
             graph.getCorrectWeights("test_0");
             graph.shutDownDB();
         }
