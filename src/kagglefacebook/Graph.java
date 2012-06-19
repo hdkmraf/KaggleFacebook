@@ -474,8 +474,8 @@ public class Graph {
             for(Long nodeId: nodes){
                 Node node = graphDb.getNodeById(nodeId);
                 int totalNodes = 10;
-                List<NodeStats> bestNodes = new ArrayList<NodeStats>();
-                bestNodes = predictRelatedNodes(node, bestNodes, totalNodes,  Direction.BOTH);
+                Set<NodeStats> bestNodes = new HashSet<NodeStats>();
+                bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes,  Direction.BOTH));
                 //if (bestNodes.size()<totalNodes){
                   //  bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
                 //}
@@ -504,8 +504,8 @@ public class Graph {
             System.out.print(stats.getSummary());
         }
         
-        private List<NodeStats> predictRelatedNodes(Node origin, List<NodeStats> bestNodes, Integer totalNodes, Direction direction){
-            List<NodeStats> predictedNodes = new ArrayList<NodeStats>();        
+        private Set<NodeStats> predictRelatedNodes(Node origin, Set<NodeStats> bestNodes, Integer totalNodes, Direction direction){
+            Set<NodeStats> predictedNodes = new HashSet<NodeStats>();        
             
             int iterationsWithoutImprovement = 0;
             Double prevMeanWeight = 0.0;
@@ -711,26 +711,32 @@ public class Graph {
         private Double getRelationshipWeightSimRank(Node x, Node y, int maxDepth, Direction direction, int depth){            
             if(x.equals(y))
                 return 1.0;            
-            else if(depth>=maxDepth)
-                return 0.0;
             
             Double DECAY = 0.6;
             Double relationshipWeight = 0.0;            
             Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.OUTGOING));               
             Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.INCOMING));
             
+            Double noScoreWeight = 0.0;
+            if(xRelationships.size()>0 && yRelationships.size()>0)
+                noScoreWeight = 1.0/(xRelationships.size()*yRelationships.size());
+            else
+                return 0.0;           
+            
+            if(noScoreWeight<0.001 || depth>=maxDepth){
+                return noScoreWeight*DECAY;
+            }
+           
+            noScoreWeight *= DECAY;   
+            
+            
             
             SummaryStatistics relWeight = new SummaryStatistics();
-            Integer xNeighbours = 0;
-            Integer yNeighbours = 0;
             boolean firstPass = true;
             for(Relationship xr : xRelationships){
-                Node a = xr.getOtherNode(x);                                
-                xNeighbours++;            
+                Node a = xr.getOtherNode(x);                                         
                 for(Relationship yr : yRelationships){                                    
                     Node b = yr.getOtherNode(y);
-                    if(firstPass)
-                        yNeighbours++;
                     if(b.equals(x))
                         relWeight.addValue(0.0);
                     else{
@@ -739,12 +745,10 @@ public class Graph {
                         relWeight.addValue(score);                    
                     }
                 }
-                firstPass = false;
             }            
             
-            Integer mul = xNeighbours*yNeighbours;
-            if(mul > 0)
-                relationshipWeight = (DECAY*relWeight.getSum())/mul;       
+            
+            relationshipWeight = relWeight.getSum()*noScoreWeight;       
             //System.out.println(relationshipWeight);
             return relationshipWeight;
         }
