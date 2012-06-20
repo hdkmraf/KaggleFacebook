@@ -190,7 +190,10 @@ public class Graph {
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("batchInserterFromCSV "+DIR+file);
        
+       Map<Long, Long> relPerNodeCount = new HashMap<Long, Long>();
        BatchInserter inserter = BatchInserters.inserter(DB_PATH, config);       
+       long nodeCount = 0L;
+       long relationshipCount = 0L;
        
        for (int i=1; i< lines.length; i++){
            String[] names = lines[i].split(",");
@@ -198,13 +201,31 @@ public class Graph {
            long node2 = Long.valueOf(names[1]);           
            if(!inserter.nodeExists(node1)){
                inserter.createNode(node1,null);
-           }                          
+               nodeCount++;
+               relPerNodeCount.put(node1, 1L);
+           } else{
+               relPerNodeCount.put(node1, relPerNodeCount.get(node1)+1);
+           }                         
            if(!inserter.nodeExists(node2)){
                inserter.createNode(node2,null);
-           } 
-           inserter.createRelationship(node1, node2, facebookRelationshipTypes.relation, null);       
-       }
+               nodeCount++;
+               relPerNodeCount.put(node2, 1L);
+           } else{
+               relPerNodeCount.put(node2, relPerNodeCount.get(node2)+1);
+           }   
+           inserter.createRelationship(node1, node2, facebookRelationshipTypes.relation, null);
+           
+  
+           relationshipCount++;
+       }       
        inserter.shutdown();
+       SummaryStatistics stats = new SummaryStatistics();
+       for(Entry<Long, Long> entry:relPerNodeCount.entrySet()){
+           //System.out.println(entry.toString());
+           stats.addValue(entry.getValue());
+       }
+       System.out.println(stats.getSummary());
+       System.out.println("Inserted Nodes = "+nodeCount+" Relationships = "+relationshipCount );
    }
     
   
@@ -368,7 +389,7 @@ public class Graph {
            rels.put(Long.valueOf(pairs[0]), targets);           
        }              
        
-       new PredictBatch(new ArrayList<Long>(), "test_batch").correctWeights(rels, Direction.BOTH);
+       new PredictBatch(new ArrayList<Long>(), "test_batch").correctWeights(rels);
        
    }
         
@@ -436,7 +457,7 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Double MIN_WEIGHT = 0.01;
+        private final Double MIN_WEIGHT = 0.0;
         private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
@@ -477,13 +498,13 @@ public class Graph {
             }
         }
         
-        public void correctWeights(Map<Long,Set<Long>> rels, Direction direction){
+        public void correctWeights(Map<Long,Set<Long>> rels){
             SummaryStatistics stats = new SummaryStatistics();
             for(Long nodeId: rels.keySet()){
                 Node source = graphDb.getNodeById(nodeId);
                 for(Long t: rels.get(nodeId)){
                     Node target = graphDb.getNodeById(t);                    
-                    Double weight = getRelationshipWeightSimRank(source, target, MAX_DEPTH, direction,0);
+                    Double weight = getRelationshipWeightSimRank(source, Sets.newHashSet(source.getRelationships(Direction.INCOMING)), target, Sets.newHashSet(target.getRelationships(Direction.INCOMING)), 5, 0);
                     stats.addValue(weight);
                     System.out.println(nodeId+" : "+t+" = "+weight+" - "+stats.getMean());
                 }
@@ -527,7 +548,7 @@ public class Graph {
                     if(!nodeIn)
                         //weight = getRelationshipWeightAdamic(origin,endNode, depth+EXTRA_DEPTH, direction);
                         //weight = getRelationshipWeightKatz(origin,endNode, depth+EXTRA_DEPTH, direction);
-                        weight = getRelationshipWeightSimRank(origin,endNode, depth+EXTRA_DEPTH, direction,0);
+                        weight = getRelationshipWeightSimRank(origin, Sets.newHashSet(origin.getRelationships(Direction.INCOMING)), endNode, Sets.newHashSet(endNode.getRelationships(Direction.INCOMING)), 5,0);
                     if (weight>MIN_WEIGHT)
                         predictedNodes.add(new NodeStats(endNode.getId(), weight));
                     if (predictedNodes.size()>totalNodes){
@@ -695,40 +716,54 @@ public class Graph {
             return relationshipWeight;
         }
         
-        private Double getRelationshipWeightSimRank(Node x, Node y, int maxDepth, Direction direction, int depth){            
-            if(x.equals(y))
-                return 1.0;            
+        private Double getRelationshipWeightSimRank(Node x, Set<Relationship> xRelationships, Node y, Set<Relationship> yRelationships , int maxDepth, int depth){            
+            if (x.equals(y))
+                return 1.0; 
+            if (depth>=maxDepth)
+                return 0.0;            
             
-            Double DECAY = 0.6;
-            Double relationshipWeight = 0.0;            
-            Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.OUTGOING));               
-            Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.INCOMING));
+            Double decay = 0.1;
+            Double threshold = 0.0001;
+            Double relationshipWeight = 0.0;                                       
             
             Double noScoreWeight = 0.0;
             if(xRelationships.size()>0 && yRelationships.size()>0)
-                noScoreWeight = 1.0/(xRelationships.size()*yRelationships.size());
+                noScoreWeight = decay/(xRelationships.size()*yRelationships.size());
             else
                 return 0.0;           
             
-            if(noScoreWeight<0.001 || depth>=maxDepth){
-                return noScoreWeight*DECAY;
-            }
-           
-            noScoreWeight *= DECAY;   
-            
-            
-            
-            SummaryStatistics relWeight = new SummaryStatistics();
-            boolean firstPass = true;
+            if(noScoreWeight*Math.pow(decay,depth) < threshold)
+                return 0.0;
+                                                            
+            SummaryStatistics relWeight = new SummaryStatistics();                          
+            boolean oppositeFound = false;
             for(Relationship xr : xRelationships){
-                Node a = xr.getOtherNode(x);                                         
+                Node a = xr.getStartNode();
+                if(a.equals(y)){
+                    if(!oppositeFound){                      
+                        oppositeFound = true;
+                        if (depth>0)
+                            relWeight.addValue(1.0); 
+                    }
+                    continue;
+                }
+                Set<Relationship> aRelationships = Sets.newHashSet(a.getRelationships(Direction.INCOMING));              
                 for(Relationship yr : yRelationships){                                    
-                    Node b = yr.getOtherNode(y);
-                    if(b.equals(x))
-                        relWeight.addValue(0.0);
+                    Node b = yr.getStartNode();
+                    if(b.equals(x)){
+                        if(!oppositeFound){
+                            oppositeFound = true;
+                            if (depth>0)
+                                relWeight.addValue(1.0);                            
+                        }
+                        continue;
+                    }                        
                     else{
                         //System.out.println(a.getId()+" => "+b.getId());
-                        Double score = getRelationshipWeightSimRank(a, b, maxDepth, direction, depth+1);
+                        Set<Relationship> bRelationships = Sets.newHashSet(b.getRelationships(Direction.INCOMING));
+                        if (aRelationships.size()<1)
+                            continue;
+                        Double score = getRelationshipWeightSimRank(a, aRelationships, b, bRelationships, maxDepth, depth+1);
                         relWeight.addValue(score);                    
                     }
                 }
