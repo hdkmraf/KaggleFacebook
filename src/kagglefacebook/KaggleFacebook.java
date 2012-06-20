@@ -17,23 +17,23 @@ public class KaggleFacebook {
         String dir = "/home/rafael/kaggle_facebook_dump/";                     
         // newGraph = true will overwrite the neo4j graph and googlechart.js
         boolean newGraph = false;        
-        if(false){
+        if(true){
             Graph graph = new Graph(dir, dir+"graph.db", newGraph);                
             if(newGraph){
-                //graph.loadFromCSV("train.csv");
-                graph.startDB();
+                //graph.startDB();
+                //graph.shutDownDB();
                 graph.batchInsertFromCSV("train.csv");
                 
             }
-            //graph.splitIntoSets(10, 10000, 10);
             graph.startReadOnlyDB();
             //graph.cacheFullGraph();
-            graph.getCorrectWeights("test_0");
+            graph.splitIntoSets(1, 1000, 10, false);
+            //graph.getCorrectWeights("test_0");
             graph.shutDownDB();
         }
         
         
-        if(true){
+        if(false){
             int selector = 0;        
             Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
             trainGraph.startReadOnlyDB();

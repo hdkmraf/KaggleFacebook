@@ -27,8 +27,6 @@ import org.neo4j.graphdb.Path;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.graphdb.index.Index;
-import org.neo4j.graphdb.index.IndexHits;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Traverser;
@@ -54,7 +52,6 @@ public class Graph {
     private String DB_PATH;
     String greeting;
     private GraphDatabaseService graphDb;
-    private Index<Node> nameIndex;
     private String NAME_KEY = "name";
     private String DIR;
     private boolean newDB;
@@ -94,7 +91,6 @@ public class Graph {
         // START SNIPPET: startDb
         //graphDb = new GraphDatabaseFactory().newEmbeddedDatabase( DB_PATH );
         graphDb = new EmbeddedGraphDatabase( DB_PATH , config);
-        nameIndex = graphDb.index().forNodes(NAME_KEY);
         registerShutdownHook( graphDb );
         // END SNIPPET: startDb
     }
@@ -104,7 +100,6 @@ public class Graph {
         // START SNIPPET: startDb
         //graphDb = new GraphDatabaseFactory().newEmbeddedDatabase( DB_PATH );
         graphDb = new EmbeddedReadOnlyGraphDatabase( DB_PATH , config);
-        nameIndex = graphDb.index().forNodes(NAME_KEY);
         registerShutdownHook( graphDb );
         // END SNIPPET: startDb
     }
@@ -198,25 +193,23 @@ public class Graph {
        BatchInserter inserter = BatchInserters.inserter(DB_PATH, config);       
        
        for (int i=1; i< lines.length; i++){
-           Map<String,Object> properties = new HashMap<String, Object>();
            String[] names = lines[i].split(",");
            long node1 = Long.valueOf(names[0]);
            long node2 = Long.valueOf(names[1]);           
            if(!inserter.nodeExists(node1)){
-               properties.put(NAME_KEY, node1);
-               inserter.createNode(node1,properties);
+               inserter.createNode(node1,null);
            }                          
            if(!inserter.nodeExists(node2)){
-               properties.put(NAME_KEY, node2);
-               inserter.createNode(node2,properties);
+               inserter.createNode(node2,null);
            } 
            inserter.createRelationship(node1, node2, facebookRelationshipTypes.relation, null);       
        }
+       inserter.shutdown();
    }
     
   
    
-   public void splitIntoSets(Integer totalSets, Integer testSetSize, Integer relationshipsPerNode){
+   public void splitIntoSets(Integer totalSets, Integer testSetSize, Integer relationshipsPerNode, boolean random){
        System.out.println("splitIntoSets Total sets:"+totalSets+" Set size:"+testSetSize+" Rels per node:"+relationshipsPerNode );
        
        AbstractGraphDatabase abstractGraph = (AbstractGraphDatabase)graphDb;
@@ -235,29 +228,33 @@ public class Graph {
            }
            Graph outGraph = new Graph(DIR, outDB, false);
            outGraph.startDB();
-           Helper.writeToFile(outFile, "source_node,destination_nodes"+NL, false);
+           Helper.writeToFile(outFile, "source_node,destination_nodes"+NL, true);
            for (int j=0; j<testSetSize; j++) {
                String line = "";  
                Node node = null;
                Long fromId = null;
-               while (node == null || testNodes.contains(fromId)){
+               Set<Relationship> relationships = new HashSet<Relationship>();
+               while (node == null || testNodes.contains(fromId) || (random == false && relationships.size()<= relationshipsPerNode)){
                    fromId = 1+((long)(Math.random()*totalNodes));
                    try{
-                       node = graphDb.getNodeById(fromId);
+                       node = graphDb.getNodeById(fromId);                                                 
+                       relationships = Sets.newHashSet(node.getRelationships(facebookRelationshipTypes.relation, Direction.OUTGOING));                                       
                    } catch (Exception e){
+                       node = null;
+                       relationships = null;
                        continue;
                    }
                    //System.out.println(fromId);
                }
                
                testNodes.add(fromId);
-               Iterable<Relationship> relationships = node.getRelationships(facebookRelationshipTypes.relation, Direction.OUTGOING);               
+               //Iterable<Relationship> relationships = node.getRelationships(facebookRelationshipTypes.relation, Direction.OUTGOING);               
                line += fromId+",";
                int k = 0;
                for (Relationship relationship: relationships){
                    if(k>= relationshipsPerNode)
                        break;
-                   Long toId = relationship.getEndNode().getId();
+                   Long toId = relationship.getOtherNode(node).getId();
                    line += toId+" ";
                    Transaction outTx = outGraph.graphDb.beginTx();
                    try{                        
@@ -417,21 +414,11 @@ public class Graph {
         
         private Node getOrCreateAndIndexNode(String name){
             Node node = null;
-            try{
-                IndexHits<Node> hits = nameIndex.get(NAME_KEY, name);
-                if(hits.hasNext()){
-                    node = hits.next();
-                }
-                hits.close();
-            } catch (Exception e){
-                System.out.println(e+":"+name);
-            }
             if (node == null){
                 Transaction tx = graphDb.beginTx();
                 try{
                     node = graphDb.createNode();
                     node.setProperty(NAME_KEY, name);        
-                    nameIndex.add(node, NAME_KEY, name);
                     tx.success();
                 }
                 finally {
