@@ -26,7 +26,7 @@ public class KaggleFacebook {
                 
             }
             graph.startReadOnlyDB();
-            //graph.cacheFullGraph();
+            graph.cacheFullGraph();
             //graph.splitIntoSets(1, 1000, 10, false);
             //graph.getCorrectWeights("test_0");
             graph.makePredictions("test.csv", "submission_result.csv");
