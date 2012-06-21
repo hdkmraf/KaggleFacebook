@@ -456,7 +456,7 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Double MIN_WEIGHT = 0.001;
+        private final Double MIN_WEIGHT = 0.0;
         private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
@@ -484,7 +484,7 @@ public class Graph {
                 Set<NodeStats> bestNodes = new HashSet<NodeStats>();
                 bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING));
                 if (bestNodes.size()<totalNodes){
-                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.INCOMING));          
+                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
                 }
                 String nodesString = "";
                 for(NodeStats n:bestNodes){
@@ -821,14 +821,14 @@ public class Graph {
                 Node a = xr.getStartNode();
                 if (!commonNodes.contains(a))
                     continue;
-                if(a.equals(y)){
+                 if(a.equals(y)){
                     if(!oppositeFound){                      
                         oppositeFound = true;
                         if (depth>0)
                             relWeight.addValue(1.0); 
                     }
                     continue;
-                }
+                 }                                               
                 Set<Relationship> aRelationships = Sets.newHashSet(a.getRelationships(Direction.INCOMING));              
                 for(Relationship yr : yRelationships){                                    
                     Node b = yr.getStartNode();
