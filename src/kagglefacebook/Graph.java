@@ -503,7 +503,7 @@ public class Graph {
                 for(Long t: rels.get(nodeId)){
                     Long millis = System.currentTimeMillis();
                     Node target = graphDb.getNodeById(t);                    
-                    Double weight = getRelationshipWeightSimRankCommonPaths(source, Sets.newHashSet(source.getRelationships(Direction.INCOMING)), target, Sets.newHashSet(target.getRelationships(Direction.INCOMING)), 10, 0);
+                    Double weight = getRelationshipWeightSimRankCommonPaths(source, Sets.newHashSet(source.getRelationships(Direction.INCOMING)), target, Sets.newHashSet(target.getRelationships(Direction.INCOMING)), 5, 0);
                     stats.addValue(weight);
                     millis = System.currentTimeMillis() -millis;
                     System.out.println(nodeId+" : "+t+" = "+weight+" - "+stats.getMean()+" mS:"+millis);
@@ -550,7 +550,7 @@ public class Graph {
                     if(!nodeIn)
                         //weight = getRelationshipWeightAdamic(origin,endNode, depth+EXTRA_DEPTH, direction);
                         //weight = getRelationshipWeightKatz(origin,endNode, depth+EXTRA_DEPTH, direction);
-                        weight = getRelationshipWeightSimRankCommonPaths(origin, Sets.newHashSet(origin.getRelationships(Direction.INCOMING)), endNode, Sets.newHashSet(endNode.getRelationships(Direction.INCOMING)), 10,0);
+                        weight = getRelationshipWeightSimRankCommonPaths(origin, Sets.newHashSet(origin.getRelationships(Direction.INCOMING)), endNode, Sets.newHashSet(endNode.getRelationships(Direction.INCOMING)), 5,0);
                     if (weight>MIN_WEIGHT)
                         predictedNodes.add(new NodeStats(endNode.getId(), weight));
                     if (predictedNodes.size()>totalNodes){
@@ -786,7 +786,7 @@ public class Graph {
                 return 0.0;            
             
             Double decay = 0.1;
-            //Double threshold = 0.0;
+            Double threshold = 0.0001;
             Double relationshipWeight = 0.0;               
             
             Double noScoreWeight = 0.0;
@@ -794,11 +794,7 @@ public class Graph {
                 noScoreWeight = decay/(xRelationships.size()*yRelationships.size());
             else
                 return 0.0;           
-            
-            //if(noScoreWeight*Math.pow(decay,depth) < threshold){
-                //System.out.println(depth+" "+noScoreWeight);
-            //    return noScoreWeight;
-            //}
+                        
             
             PathFinder<Path> outFinder = GraphAlgoFactory.pathsWithLength(Traversal.expanderForAllTypes(),2);            
             Iterable<Path> paths = outFinder.findAllPaths(x, y);
@@ -813,7 +809,12 @@ public class Graph {
                                                
             if (commonNodes.size()<1)
                 return 0.0;
-                                                                          
+            
+            if(noScoreWeight*Math.pow(decay,depth)*commonNodes.size() < threshold){
+                //System.out.println(depth+" "+noScoreWeight);
+                return noScoreWeight;
+            }
+            
             boolean oppositeFound = false;
             for(Relationship xr : xRelationships){
                 Node a = xr.getStartNode();
@@ -845,7 +846,7 @@ public class Graph {
                         Set<Relationship> bRelationships = Sets.newHashSet(b.getRelationships(Direction.INCOMING));
                         if (aRelationships.size()<1)
                             continue;
-                        Double score = getRelationshipWeightSimRank(a, aRelationships, b, bRelationships, maxDepth, depth+1);
+                        Double score = getRelationshipWeightSimRankCommonPaths(a, aRelationships, b, bRelationships, maxDepth, depth+1);
                         relWeight.addValue(score);                    
                     }
                 }
