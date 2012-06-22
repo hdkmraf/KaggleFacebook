@@ -26,16 +26,37 @@ public class KaggleFacebook {
                 
             }
             graph.startReadOnlyDB();
-            graph.cacheFullGraph();
-            //graph.splitIntoSets(1, 1000, 10, false);
-            //graph.getCorrectWeights("test_0");
-            graph.makePredictions("test.csv", "submission_result.csv");
+            //graph.cacheFullGraph();
+            //graph.splitIntoSets(1, 1000, 10, true);
+            graph.getCorrectWeights("test_full");
+            //graph.getCorrectWeights("test_random");
+            //graph.makePredictions("test.csv", "submission_result.csv");
             graph.shutDownDB();
         }
         
         
+        if(false){
+            String selector = "0";        
+            Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
+            trainGraph.startReadOnlyDB();
+            //trainGraph.cacheFullGraph();
+            trainGraph.makePredictions("test_"+selector, "result_"+selector );      
+            trainGraph.validateResult("test_"+selector, "result_"+selector);               
+            trainGraph.shutDownDB();
+        }
+        
         if(true){
-            int selector = 0;        
+            String selector = "full";        
+            Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
+            trainGraph.startReadOnlyDB();
+            //trainGraph.cacheFullGraph();
+            trainGraph.makePredictions("test_"+selector, "result_"+selector );      
+            trainGraph.validateResult("test_"+selector, "result_"+selector);               
+            trainGraph.shutDownDB();
+        }
+        
+        if(false){
+            String selector = "random";        
             Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
             trainGraph.startReadOnlyDB();
             //trainGraph.cacheFullGraph();
