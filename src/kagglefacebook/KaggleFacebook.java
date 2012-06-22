@@ -17,7 +17,7 @@ public class KaggleFacebook {
         String dir = "/home/rafael/kaggle_facebook_dump/";                     
         // newGraph = true will overwrite the neo4j graph and googlechart.js
         boolean newGraph = false;        
-        if(false){
+        if(true){
             Graph graph = new Graph(dir, dir+"graph.db", newGraph);                
             if(newGraph){
                 //graph.startDB();
@@ -30,6 +30,7 @@ public class KaggleFacebook {
             //graph.splitIntoSets(1, 1000, 10, true);
             graph.getCorrectWeights("test_full");
             //graph.getCorrectWeights("test_random");
+            //graph.getCorrectWeights("train.csv");
             //graph.makePredictions("test.csv", "submission_result.csv");
             graph.shutDownDB();
         }
@@ -45,7 +46,7 @@ public class KaggleFacebook {
             trainGraph.shutDownDB();
         }
         
-        if(true){
+        if(false){
             String selector = "full";        
             Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
             trainGraph.startReadOnlyDB();

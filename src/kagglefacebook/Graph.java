@@ -779,19 +779,17 @@ public class Graph {
             return relationshipWeight;
         }
         
-         private Double getRelationshipWeightSimRankCommonPaths(Node x, Node y, int maxDepth, int depth){            
-            if (x.equals(y))
-                return 1.0; 
+         private Double getRelationshipWeightSimRankCommonPaths(Node x, Node y, int maxDepth, int depth){
             if (depth>=maxDepth)
                 return 0.0;            
             
             Double decay = 0.1;
-            Double threshold = 0.001;
+            Double threshold = 0.01;
             Double relationshipWeight = 0.0;               
                        
-            PathFinder<Path> outFinder = GraphAlgoFactory.pathsWithLength(Traversal.expanderForAllTypes(),2);            
+            PathFinder<Path> outFinder = GraphAlgoFactory.pathsWithLength(Traversal.expanderForAllTypes(Direction.OUTGOING),2);            
             Iterable<Path> paths = outFinder.findAllPaths(x, y);
-            Set<Node> commonNodes = new HashSet<Node>();
+            Set<Node> commonNodes = new HashSet<Node>();                       
             
             SummaryStatistics relWeight = new SummaryStatistics();                                    
             for(Path p: paths){               
@@ -801,26 +799,31 @@ public class Graph {
             }
                                                
             if (commonNodes.size()<1)
-                return 0.0;         
+                return 0.0;   
             
             commonNodes.remove(x);
-            commonNodes.remove(y);
+            commonNodes.remove(y);            
             
-            Double noScoreWeight = decay/commonNodes.size();
-            
-            if(noScoreWeight*Math.pow(decay,depth) < threshold){
+            Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.OUTGOING));
+            Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.INCOMING));            
+            Double noScoreWeight = 1.0/(xRelationships.size()*xRelationships.size());
+            Double commonNodesSquare = Math.pow(commonNodes.size(),2);
+            if((noScoreWeight*Math.pow(decay,depth)*commonNodesSquare) < threshold){
                 //System.out.println(depth+" "+noScoreWeight);
-                return noScoreWeight;
+                return noScoreWeight*commonNodesSquare;
             }
-            
-            for (Node a: commonNodes){
+
+            //Set<Node> commonNodesCopy = new HashSet<Node>();
+            //commonNodesCopy.addAll(commonNodes);
+            for (Node a: commonNodes){  
+                //commonNodesCopy.remove(a);
                 for (Node b: commonNodes){
-                    Double score = getRelationshipWeightSimRankCommonPaths(a, b, maxDepth, depth+1);
+                    Double score = getRelationshipWeightSimRankCommonPaths(a, b, maxDepth, depth+1);                 
                     relWeight.addValue(score);
-                }                
+                }
             }                                                   
             
-            relationshipWeight = relWeight.getSum()*noScoreWeight;       
+            relationshipWeight = relWeight.getSum()*noScoreWeight*decay;       
             //System.out.println(depth+" "+relationshipWeight);
             return relationshipWeight;
         }
