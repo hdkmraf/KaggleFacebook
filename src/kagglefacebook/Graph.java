@@ -55,7 +55,7 @@ public class Graph {
     private String DIR;
     private boolean newDB;
     
-    private final int MAX_THREADS = Runtime.getRuntime().availableProcessors()-1;
+    private final int MAX_THREADS = Runtime.getRuntime().availableProcessors()-2;
     //private final int MAX_THREADS = 1;
        
     private String NL = System.getProperty("line.separator");
@@ -454,11 +454,11 @@ public class Graph {
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
-        private final Double MIN_WEIGHT = 0.01;
+        private final Double MIN_WEIGHT = 0.0;
         private final Integer MAX_DEPTH = 2;
         private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
-        private final Long TIME_LIMIT = 30000L;        
+        private final Long TIME_LIMIT = 60000L;        
         
         private final TraversalDescription PREDICTION_TRAVERSAL = 
             Traversal.description()
@@ -482,9 +482,9 @@ public class Graph {
                 int totalNodes = 10;
                 Set<NodeStats> bestNodes = new HashSet<NodeStats>();
                 bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING));
-                if (bestNodes.size()<totalNodes){
+               /* if (bestNodes.size()<totalNodes){
                     bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.INCOMING));          
-                }
+                }*/
                 String nodesString = "";
                 for(NodeStats n:bestNodes){
                     nodesString = nodesString + n.NODE_ID + " ";
@@ -506,7 +506,7 @@ public class Graph {
                 for(Long t: rels.get(nodeId)){
                     Long millis = System.currentTimeMillis();
                     Node target = graphDb.getNodeById(t);                    
-                    Double weight = getRelationshipWeightSimRankCommonPaths(source, target, 3, 0, System.currentTimeMillis());
+                    Double weight = getRelationshipWeightSimRankCommonPaths(source, target, 2, 0, System.currentTimeMillis());
                     stats.addValue(weight);
                     if (weight == 0.0)
                         zeroCount++;
@@ -540,10 +540,10 @@ public class Graph {
                     String print = "";
                     if (iterationsWithoutImprovement > MAX_ITERATIONS)                    
                         break; 
-                    if(elapsedTime > TIME_LIMIT){
-                        if(predictedNodes.size()>=totalNodes)
-                            break;
-                    } 
+                    //if(elapsedTime > TIME_LIMIT){
+                       // if(predictedNodes.size()>=totalNodes)
+                          //  break;
+                    //} 
                     Double weight = 0.0;                
                     Boolean nodeIn = false;
                     for(NodeStats n : bestNodes){
@@ -556,7 +556,7 @@ public class Graph {
                     if(!nodeIn)
                         //weight = getRelationshipWeightAdamic(origin,endNode, depth+EXTRA_DEPTH, direction);
                         //weight = getRelationshipWeightKatz(origin,endNode, depth+EXTRA_DEPTH, direction);
-                        weight = getRelationshipWeightSimRankCommonPaths(origin, endNode, 3,0, System.currentTimeMillis());
+                        weight = getRelationshipWeightSimRankCommonPaths(origin, endNode, 2, 0, System.currentTimeMillis());
                     if (weight>MIN_WEIGHT)
                         predictedNodes.add(new NodeStats(endNode.getId(), weight));
                     if (predictedNodes.size()>totalNodes){
@@ -788,7 +788,7 @@ public class Graph {
          private Double getRelationshipWeightSimRankCommonPaths(Node x, Node y, Integer maxDepth, Integer depth, Long startTime){                         
             Long maxTime = 1000L;
             Double decay = 0.1;
-            Double threshold = 0.0001;
+            Double threshold = 0.01;
             boolean directRel = false;
             SummaryStatistics relWeight = new SummaryStatistics(); 
             
@@ -799,43 +799,36 @@ public class Graph {
             if (time>maxTime){
                 return 0.0;
             }            
-            Double relationshipWeight = 0.0;           
-            
-            /*PathFinder<Path> outFinder = GraphAlgoFactory.allSimplePaths(Traversal.expanderForAllTypes(Direction.OUTGOING),2);            
-            Iterable<Path> paths = outFinder.findAllPaths(x, y);             
-            
-            
-            for(Path p: paths){               
-                if (p.length() == 1 && depth>0)
-                    directRel = true;
-                for(Node n: p.nodes()){                                    
-                    commonNodes.add(n);
-                }
-            }                       
-            */
-            
-            //if (directRel)
-              //  relWeight.addValue(commonNodes.size()*1.0);
+            Double relationshipWeight = 0.0;                                  
 
-            Set<Node> commonNodes = new HashSet<Node>();                                  
+            Set<Node> commonNodes = new HashSet<Node>();
+            Set<Node> xNodes = new HashSet<Node>();
+            Set<Node> yNodes = new HashSet<Node>();
+            
             
             Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.BOTH));
             Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.BOTH));            
             
             for (Relationship xRel : xRelationships ){
-                commonNodes.add(xRel.getOtherNode(x));
+                xNodes.add(xRel.getOtherNode(x));
             }            
             for (Relationship yRel : yRelationships ){
-                commonNodes.add(yRel.getOtherNode(y));
+                yNodes.add(yRel.getOtherNode(y));
             }
             
+            Sets.intersection(xNodes, yNodes).copyInto(commonNodes);
+            xNodes = null;
+            yNodes = null;
             
             if(commonNodes.contains(x) || commonNodes.contains(y)){
                 directRel = true;
+                commonNodes.remove(x);
+                commonNodes.remove(y);  
             }
-            commonNodes.remove(x);
-            commonNodes.remove(y);  
-            
+           
+
+             if (directRel)
+                relWeight.addValue(decay);
             
             if (commonNodes.size()<2)
                 if(directRel)
@@ -849,18 +842,20 @@ public class Graph {
                 else
                     return 0.0;  
                         
-            
+
             
             //Double noScoreWeight = 1.0/(xRelationships.size()+xRelationships.size());
-            //Double noScoreWeight = commonNodes.size()/(Math.pow(commonNodes.size(),2)/2);
+            Double noScoreWeight = 1.0/(Math.pow(commonNodes.size(),2)/2);
             //Double commonNodesDouble = commonNodes.size();
             
             //long time = System.currentTimeMillis() - startTime;
-            //if((noScoreWeight*Math.pow(decay,depth)) < threshold || depth >= maxDepth || time>maxTime){
+            if((noScoreWeight*Math.pow(decay,depth)*commonNodes.size()) < threshold){
                 //System.out.println(depth+" "+noScoreWeight);
-              //  return noScoreWeight*decay;
-                //return 0.0;
-            //}
+                 if(directRel)
+                    return decay;
+                else
+                    return 0.0;
+            }
 
           
             Set<Node> commonNodesCopy = new HashSet<Node>();

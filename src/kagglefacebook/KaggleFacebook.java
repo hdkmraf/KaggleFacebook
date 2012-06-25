@@ -17,7 +17,7 @@ public class KaggleFacebook {
         String dir = "/home/rafael/kaggle_facebook_dump/";                     
         // newGraph = true will overwrite the neo4j graph and googlechart.js
         boolean newGraph = false;        
-        if(true){
+        if(false){
             Graph graph = new Graph(dir, dir+"graph.db", newGraph);                
             if(newGraph){
                 //graph.startDB();
@@ -46,7 +46,7 @@ public class KaggleFacebook {
             trainGraph.shutDownDB();
         }
         
-        if(false){
+        if(true){
             String selector = "full";        
             Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
             trainGraph.startReadOnlyDB();
