@@ -786,19 +786,16 @@ public class Graph {
         }
         
          private Double getRelationshipWeightSimRankCommonPaths(Node x, Node y, Integer maxDepth, Integer depth, Long startTime){                         
-            Long maxTime = 1000L;
+            Long maxTime = 2000L;
             Double decay = 0.1;
-            Double threshold = 0.01;
+            Double stregthFactor = 0.1;
+            Double threshold = 0.1;
+            Double directRelValue = 0.0;
             boolean directRel = false;
             SummaryStatistics relWeight = new SummaryStatistics(); 
             
             if(x.equals(y))
-                return 1.0; 
-                                                                                                                                                    
-            long time = System.currentTimeMillis() - startTime;  
-            if (time>maxTime){
-                return 0.0;
-            }            
+                return 1.0;                                                                                                                                                                           
             Double relationshipWeight = 0.0;                                  
 
             Set<Node> commonNodes = new HashSet<Node>();
@@ -809,55 +806,41 @@ public class Graph {
             Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.BOTH));
             Set<Relationship> yRelationships = Sets.newHashSet(y.getRelationships(Direction.BOTH));            
             
-            for (Relationship xRel : xRelationships ){
+            for (Relationship xRel : xRelationships){
                 xNodes.add(xRel.getOtherNode(x));
             }            
-            for (Relationship yRel : yRelationships ){
+            for (Relationship yRel : yRelationships){
                 yNodes.add(yRel.getOtherNode(y));
             }
             
-            Sets.intersection(xNodes, yNodes).copyInto(commonNodes);
+            commonNodes.addAll(Sets.intersection(xNodes, yNodes));
             xNodes = null;
             yNodes = null;
             
             if(commonNodes.contains(x) || commonNodes.contains(y)){
-                directRel = true;
+                if(depth>0)
+                    directRelValue = 1.0;
                 commonNodes.remove(x);
                 commonNodes.remove(y);  
             }
-           
-
-             if (directRel)
-                relWeight.addValue(decay);
-            
+                      
             if (commonNodes.size()<2)
-                if(directRel)
-                    return decay;
-                else
-                    return 0.0;  
+                return directRelValue;
+             
+            Double noScoreWeight = (directRelValue+(commonNodes.size()*stregthFactor))*decay;
             
-            if(depth >= maxDepth)
-                if(directRel)
-                    return decay;
-                else
-                    return 0.0;  
-                        
-
-            
-            //Double noScoreWeight = 1.0/(xRelationships.size()+xRelationships.size());
-            Double noScoreWeight = 1.0/(Math.pow(commonNodes.size(),2)/2);
-            //Double commonNodesDouble = commonNodes.size();
-            
-            //long time = System.currentTimeMillis() - startTime;
-            if((noScoreWeight*Math.pow(decay,depth)*commonNodes.size()) < threshold){
-                //System.out.println(depth+" "+noScoreWeight);
-                 if(directRel)
-                    return decay;
-                else
-                    return 0.0;
+            if(depth > maxDepth)
+                return noScoreWeight;
+                
+            if(Math.pow(decay,depth+1)*commonNodes.size() < threshold){
+                return noScoreWeight;
             }
-
-          
+            
+            long time = System.currentTimeMillis() - startTime;  
+            if (time>maxTime){
+                return noScoreWeight;
+            }  
+            
             Set<Node> commonNodesCopy = new HashSet<Node>();
             commonNodesCopy.addAll(commonNodes);
             for (Node a: commonNodes){  
@@ -868,7 +851,7 @@ public class Graph {
                 }
             }                                                   
             
-            relationshipWeight = relWeight.getSum()*decay;       
+            relationshipWeight = (directRelValue+(commonNodes.size()*stregthFactor)+(relWeight.getSum()*stregthFactor*stregthFactor))*decay;       
             //System.out.println(depth+" "+relationshipWeight);
             return relationshipWeight;
         }
