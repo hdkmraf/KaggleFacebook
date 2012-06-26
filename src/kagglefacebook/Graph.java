@@ -456,7 +456,6 @@ public class Graph {
         private final Double INCOMING_WEIGHT = 0.1;
         private final Double MIN_WEIGHT = 0.0;
         private final Integer MAX_DEPTH = 2;
-        private final Integer EXTRA_DEPTH = 0;
         private final Integer MAX_ITERATIONS = 1000;
         private final Long TIME_LIMIT = 60000L;        
         
@@ -482,9 +481,9 @@ public class Graph {
                 int totalNodes = 10;
                 Set<NodeStats> bestNodes = new HashSet<NodeStats>();
                 bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes,  Direction.OUTGOING));
-               /* if (bestNodes.size()<totalNodes){
-                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.INCOMING));          
-                }*/
+                if (bestNodes.size()<totalNodes){
+                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
+                }
                 String nodesString = "";
                 for(NodeStats n:bestNodes){
                     nodesString = nodesString + n.NODE_ID + " ";
@@ -532,6 +531,9 @@ public class Graph {
             for(Path path: traverser){                             
                 depth = path.length();                                           
                 int skip = 0;
+                // Go into path only if the final relationship is outgoing. Works only for MAX_DEPTH == 2
+                if(!path.lastRelationship().getEndNode().equals(path.endNode()))
+                    continue;
                 for(Node endNode: path.nodes()){                        
                     if (skip<2){
                         skip++;
