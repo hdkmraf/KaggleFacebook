@@ -17,7 +17,7 @@ public class KaggleFacebook {
         String dir = "/home/rafael/kaggle_facebook_dump/";                     
         // newGraph = true will overwrite the neo4j graph and googlechart.js
         boolean newGraph = false;        
-        if(false){
+        if(true){
             Graph graph = new Graph(dir, dir+"graph.db", newGraph);                
             if(newGraph){
                 //graph.startDB();
@@ -27,31 +27,33 @@ public class KaggleFacebook {
             }
             graph.startReadOnlyDB();
             //graph.cacheFullGraph();
-            //graph.splitIntoSets(1, 1000, 10, true);
-            graph.getCorrectWeights("test_full");
+            //graph.splitIntoSets(1, 100, 10, false);
+            //graph.getCorrectWeights("test_full");
             //graph.getCorrectWeights("test_random");
             //graph.getCorrectWeights("train.csv");
-            //graph.makePredictions("test.csv", "submission_result.csv");
+            //graph.getCorrectWeights("test_100");
+            //graph.makePredictions("test.csv", "submission_result.csv", false);
+            graph.makePredictions("selection_PR", "submission_result.csv", true);
             graph.shutDownDB();
         }
         
         
         if(false){
-            String selector = "0";        
+            String selector = "small";        
             Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
             trainGraph.startReadOnlyDB();
             //trainGraph.cacheFullGraph();
-            trainGraph.makePredictions("test_"+selector, "result_"+selector );      
+            trainGraph.makePredictions("test_"+selector, "result_"+selector, false);      
             trainGraph.validateResult("test_"+selector, "result_"+selector);               
             trainGraph.shutDownDB();
         }
         
-        if(true){
+        if(false){
             String selector = "full";        
             Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
             trainGraph.startReadOnlyDB();
             //trainGraph.cacheFullGraph();
-            trainGraph.makePredictions("test_"+selector, "result_"+selector );      
+            trainGraph.makePredictions("test_"+selector, "result_"+selector, false);      
             trainGraph.validateResult("test_"+selector, "result_"+selector);               
             trainGraph.shutDownDB();
         }
@@ -61,7 +63,7 @@ public class KaggleFacebook {
             Graph trainGraph = new Graph(dir, dir+"train_"+selector+".db", false);
             trainGraph.startReadOnlyDB();
             //trainGraph.cacheFullGraph();
-            trainGraph.makePredictions("test_"+selector, "result_"+selector );      
+            trainGraph.makePredictions("test_"+selector, "result_"+selector, false);      
             trainGraph.validateResult("test_"+selector, "result_"+selector);               
             trainGraph.shutDownDB();
         }

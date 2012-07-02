@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -55,8 +56,8 @@ public class Graph {
     private String DIR;
     private boolean newDB;
     
-    //private final int MAX_THREADS = Runtime.getRuntime().availableProcessors()-2;
-    private final int MAX_THREADS = 4;
+    private final int MAX_THREADS = Runtime.getRuntime().availableProcessors()-2;
+    //private final int MAX_THREADS = 6;
        
     private String NL = System.getProperty("line.separator");
     private Map<String, String> config = new HashMap<String, String>();
@@ -329,7 +330,7 @@ public class Graph {
    }
            
    
-   public void makePredictions(String file, String resultFile){   
+   public void makePredictions(String file, String resultFile, boolean suggestions){   
        String[] lines = Helper.readFile(DIR+file).split(NL);
        System.out.println("makePredictions "+DIR+file);
        int batchSize = (lines.length-1)/MAX_THREADS;
@@ -337,15 +338,23 @@ public class Graph {
        List<String> batchFiles = new ArrayList<String>(); 
        int batchCount=0;
        for(int i=1; i<lines.length;){
-           List<Long> batch = new ArrayList<Long>();
+           Map<Long, List<Long>> batch = new LinkedHashMap<Long, List<Long>>();                        
            for(int j=0; j<batchSize && i<lines.length; j++){
-               batch.add(Long.valueOf(lines[i].split(",")[0]));
+               String[] split = lines[i].split(",");
+               List<Long> targets = new ArrayList<Long>();
+               if(split.length>1){
+                   String[] tS = split[1].split(" ");
+                   for (String s: tS){
+                       targets.add(Long.valueOf(s));
+                   }
+               }       
+               batch.put(Long.valueOf(split[0]), targets);
                i++;           
-           }      
+           }  
            String batchFile = DIR+"batch_"+batchCount;
            batchFiles.add(batchFile);
            batchCount++;
-           threads.add(new Thread(new PredictBatch(batch, batchFile)));            
+           threads.add(new Thread(new PredictBatch(batch, batchFile, suggestions)));            
            threads.get(threads.size()-1).start();           
        }
        
@@ -386,7 +395,7 @@ public class Graph {
            }
            rels.put(Long.valueOf(pairs[0]), targets);           
        }              
-       new PredictBatch(new ArrayList<Long>(), "test_batch").correctWeights(rels);
+       new PredictBatch(new HashMap<Long, List<Long>>(), "test_batch", false).correctWeights(rels);
        
    }
         
@@ -449,51 +458,29 @@ public class Graph {
     }        
      
     public class PredictBatch implements Runnable{       
-        private List<Long> nodes;
         private String outFile;
+        private Map<Long, List<Long>> nodes;
         
         private final Double OUTGOING_WEIGHT = 1.0;
         private final Double INCOMING_WEIGHT = 0.1;
         private final Double MIN_WEIGHT = 0.0;
-        private final Integer MAX_DEPTH = 2;
-        private final Integer MAX_ITERATIONS = 1000;
-        private final Long TIME_LIMIT = 60000L;        
+        private final Integer MAX_DEPTH = 4;
+        private final Integer MAX_ITERATIONS = 100;
+        private final Long TIME_LIMIT = 30000L;     
+        private boolean suggestions =  false;
         
         private final TraversalDescription PREDICTION_TRAVERSAL = 
             Traversal.description()
             .breadthFirst()
             .uniqueness(Uniqueness.NODE_GLOBAL)
             .evaluator(Evaluators.excludeStartPosition())                        
-            .evaluator(Evaluators.includingDepths(2, MAX_DEPTH));     
+            .evaluator(Evaluators.includingDepths(2, MAX_DEPTH));                           
         
-        
-        public PredictBatch(List<Long> nodes, String outfile){
+        public PredictBatch(Map<Long, List<Long>> nodes, String outfile, boolean suggestions){
+            this.suggestions = suggestions;
             this.nodes = nodes;            
             this.outFile = outfile;
             Helper.writeToFile(outFile, "", true);
-        }
-
-        @Override
-        public void run() {
-            //startReadOnlyDB();
-            for(Long nodeId: nodes){
-                Node node = graphDb.getNodeById(nodeId);
-                int totalNodes = 10;
-                Set<NodeStats> bestNodes = new HashSet<NodeStats>();
-                bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes,  Direction.BOTH));
-                //if (bestNodes.size()<totalNodes){
-                //    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
-                //}
-                String nodesString = "";
-                for(NodeStats n:bestNodes){
-                    nodesString = nodesString + n.NODE_ID + " ";
-                }
-                if(nodesString.length()>0)
-                    nodesString = nodesString.substring(0, nodesString.length()-1);
-                Helper.writeToFile(outFile, nodeId+","+nodesString+NL, false);
-                //System.out.println(nodeId+","+nodesString);
-            }
-            //shutDownDB();
         }
         
         public void correctWeights(Map<Long,Set<Long>> rels){
@@ -518,17 +505,86 @@ public class Graph {
             System.out.println("Total seconds: " + time/1000);
             System.out.println("Total zeroes: " + zeroCount);
         }
+
+        @Override
+        public void run() {
+            //startReadOnlyDB();
+            for(Entry<Long, List<Long>> nodeSet: nodes.entrySet()){
+                int totalNodes = 10;
+                Set<NodeStats> bestNodes = new HashSet<NodeStats>();     
+                /*Map<Node, Double> nodeCredits = new HashMap<Node, Double>();
+                nodeCredits.putAll(getNodesByPseudoPageRank(node, node, false, 1000000.0, MAX_DEPTH, 0, System.currentTimeMillis()));
+                Set<NodeStats> predictedNodes = new HashSet<NodeStats>();  
+                for(Entry <Node, Double> entry: nodeCredits.entrySet()){
+                     predictedNodes.add(new NodeStats(entry.getKey().getId(), entry.getValue()));
+                }
+                Object[] nodesArray = predictedNodes.toArray();
+                Arrays.sort(nodesArray);
+                predictedNodes.clear();
+                Integer firstIndex = 0;
+                if (nodesArray.length>10){
+                    firstIndex = nodesArray.length - 10;
+                }
+                predictedNodes.addAll(Arrays.asList(nodesArray).subList(firstIndex, nodesArray.length));  
+                bestNodes.addAll(predictedNodes);*/
+                if (suggestions){
+                    bestNodes.addAll(predictSuggestedNodes(nodeSet, bestNodes, totalNodes,  Direction.OUTGOING));
+                } else {
+                    bestNodes.addAll(predictRelatedNodes(nodeSet, bestNodes, totalNodes,  Direction.OUTGOING));
+                }
+                /*if (bestNodes.size()<totalNodes){
+                    bestNodes.addAll(predictRelatedNodes(node, bestNodes, totalNodes - bestNodes.size(), Direction.BOTH));          
+                }*/
+                String nodesString = "";
+                for(NodeStats n:bestNodes){
+                    nodesString = nodesString + n.NODE_ID + " ";
+                }
+                if(nodesString.length()>0)
+                    nodesString = nodesString.substring(0, nodesString.length()-1);
+                Helper.writeToFile(outFile, nodeSet.getKey()+","+nodesString+NL, false);
+                //System.out.println(nodeId+","+nodesString);
+            }
+            //shutDownDB();
+        }               
         
-        private Set<NodeStats> predictRelatedNodes(Node origin, Set<NodeStats> bestNodes, Integer totalNodes, Direction direction){
+        
+        private Set<NodeStats> predictSuggestedNodes(Entry<Long, List<Long>> originSet, Set<NodeStats> bestNodes, Integer totalNodes, Direction direction){
+            Set<NodeStats> predictedNodes = new HashSet<NodeStats>(); 
+            Node origin = graphDb.getNodeById(originSet.getKey());
+            Double decay = 0.2;
+            for(Long targetID: originSet.getValue()){
+                Node target = graphDb.getNodeById(targetID);
+                Double weight = getRelationshipWeightSimRankCommonPaths(origin, target, 2, 0, System.currentTimeMillis());
+                weight *= decay;
+                predictedNodes.add(new NodeStats(targetID, weight));
+                decay -= 0.01;               
+                if (decay <= 0.0)
+                    break;                
+            }
+            
+            Object[] nodesArray = predictedNodes.toArray();
+            Arrays.sort(nodesArray);            
+            predictedNodes.clear();
+            Integer firstIndex = 0;
+            if(nodesArray.length>10)
+                firstIndex = nodesArray.length -10;
+            predictedNodes.addAll(Arrays.asList(nodesArray).subList(firstIndex, nodesArray.length));            
+            return predictedNodes;
+        }
+        
+        private Set<NodeStats> predictRelatedNodes(Entry<Long, List<Long>> originSet, Set<NodeStats> bestNodes, Integer totalNodes, Direction direction){
             Set<NodeStats> predictedNodes = new HashSet<NodeStats>();        
             
             int iterationsWithoutImprovement = 0;
             Double prevMeanWeight = 0.0;
             int depth = 0;                   
             long elapsedTime = 0;
-            long startTime = System.currentTimeMillis();            
+            long startTime = System.currentTimeMillis();   
+            Node origin = graphDb.getNodeById(originSet.getKey());
+            //Map<Node, Double> nodeCredits = new HashMap<Node, Double>();
+           // nodeCredits.putAll(getNodesByPseudoPageRank(origin, null, nodeCredits, 1000000.0, MAX_DEPTH, 0));
             Traverser traverser = PREDICTION_TRAVERSAL.relationships(facebookRelationshipTypes.relation, direction).traverse(origin);
-            Node prevNode = null;
+            Node prevNode = null;  
             for(Path path: traverser){                             
                 depth = path.length();                                           
                 int skip = 0;
@@ -537,12 +593,18 @@ public class Graph {
                 if(!path.lastRelationship().getEndNode().equals(path.endNode()))
                     continue;                
                 for(Relationship rel: path.relationships()){                        
+                    Node endNode = null;
                     if (skip<1){
-                        skip++;
-                        prevNode = rel.getOtherNode(origin);
-                        continue;
-                    }                    
-                    Node endNode = rel.getOtherNode(prevNode);
+                        skip++;                        
+                        if(rel.getStartNode().equals(origin)){
+                            prevNode = rel.getOtherNode(origin);
+                            outCount++;
+                            continue;
+                        }
+                        else
+                           prevNode = origin;
+                    }                   
+                    endNode = rel.getOtherNode(prevNode);
                     //Node endNode = path.endNode();
                     prevNode = endNode;
                     //We do this to check relationship direction, if it is not outgoing continue
@@ -552,10 +614,10 @@ public class Graph {
                     String print = "";
                     if (iterationsWithoutImprovement > MAX_ITERATIONS)                    
                         break; 
-                    //if(elapsedTime > TIME_LIMIT){
-                       // if(predictedNodes.size()>=totalNodes)
-                          //  break;
-                    //} 
+                    if(elapsedTime > TIME_LIMIT){
+                        if(predictedNodes.size()>=totalNodes)
+                            break;
+                    } 
                     Double weight = 0.0;                
                     Boolean nodeIn = false;
                     for(NodeStats n : bestNodes){
@@ -802,7 +864,7 @@ public class Graph {
         }
         
          private Double getRelationshipWeightSimRankCommonPaths(Node x, Node y, Integer maxDepth, Integer depth, Long startTime){                         
-            Long maxTime = 2000L;
+            Long maxTime = 500L;
             Double decay = 0.1;
             Double stregthFactor = 0.1;
             Double threshold = 0.1;
@@ -871,6 +933,50 @@ public class Graph {
             //System.out.println(depth+" "+relationshipWeight);
             return relationshipWeight;
         }
+         
+         private Map<Node, Double> getNodesByPseudoPageRank(Node x, Node previous, boolean prevRelIncoming, Double credits, Integer maxDepth, Integer depth, Long startTime){                                       
+             Long maxTime = 60000L;
+             Set<Relationship> xRelationships = Sets.newHashSet(x.getRelationships(Direction.OUTGOING));             
+             Map<Node, Double> nodeCredits = new HashMap<Node, Double>();
+             Double creditsPerNode = credits/xRelationships.size();
+             if (depth>1){
+                 if (prevRelIncoming){                 
+                     nodeCredits.put(x, creditsPerNode/2);
+                 } else {                 
+                     nodeCredits.put(x, 0.0);
+                 }
+             }
+             
+            if (depth > maxDepth)
+                 return nodeCredits;
+                         
+            long time = System.currentTimeMillis() - startTime;  
+            if (time>maxTime){
+                return nodeCredits;
+            }  
+                                       
+             for(Relationship xRel: xRelationships){
+                 Node n = xRel.getOtherNode(x);
+                 if(!previous.equals(n)){
+                     boolean relIncoming = false;
+                     if(xRel.getEndNode().equals(n))
+                         relIncoming = true;                     
+                     Map<Node, Double> responseCredits = getNodesByPseudoPageRank(n, x, relIncoming, creditsPerNode, maxDepth, depth+1, startTime);
+                     for (Entry<Node, Double> entry: responseCredits.entrySet()){
+                         Node en = entry.getKey();
+                         Double value = entry.getValue();
+                         if(nodeCredits.containsKey(en)){
+                             nodeCredits.put(en, nodeCredits.get(en)+value);
+                         } else {
+                             nodeCredits.put(en, value);
+                         }
+                             
+                     }
+                 }
+             }
+                                                   
+             return nodeCredits;
+         }
         
     }
     
